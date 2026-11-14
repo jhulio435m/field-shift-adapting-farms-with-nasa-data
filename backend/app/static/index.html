@@ -196,6 +196,10 @@
     .parcel-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
     .parcel-list button { border: 1px solid var(--border); background: #fff; color: var(--ink); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
     .parcel-list button.active { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+    .parcel-list button.focused { outline: 2px solid var(--accent); outline-offset: 2px; }
+    .parcel-summary { display: grid; grid-template-columns: repeat(auto-fit, minmax(190px, 1fr)); gap: 8px; }
+    .parcel-summary article { border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+    .parcel-summary strong { display: block; }
     .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
     :focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
     @media (max-width: 600px) { .step-grid { grid-template-columns: 1fr; } #map { height: 230px; } }
@@ -235,6 +239,7 @@
       <div class="card">
         <h2 data-en="2. Save your fields">2. Guarda tus parcelas</h2>
         <div id="profileSummary" class="small"></div>
+        <p class="small" data-en="Choose one or more fields. Tap a selected field again to remove it. The outlined field shows the detailed diagnosis.">Elige una o más parcelas. Toca otra vez una parcela seleccionada para quitarla. La parcela con borde muestra el diagnóstico detallado.</p>
         <div id="parcelList" class="parcel-list" aria-label="Tus parcelas"></div>
         <label for="parcelName" data-en="Field name">Nombre de la parcela</label>
         <input id="parcelName" type="text" maxlength="80" placeholder="Ej. Lote de papa" data-en-placeholder="E.g. potato field" />
@@ -282,7 +287,7 @@
 
         <button class="btn-primary" onclick="saveParcel()" data-en="Save field">Guardar parcela</button>
         <p class="status-line" id="parcelStatus" role="status"></p>
-        <button class="btn-primary" id="analyzeButton" onclick="runAnalysis()" disabled data-en="Analyse selected field">Analizar parcela seleccionada</button>
+        <button class="btn-primary" id="analyzeButton" onclick="runAnalysis()" disabled data-en="Analyse selected fields">Analizar parcelas seleccionadas</button>
       </div>
 
       <div class="card agro-only" style="display:none;">
@@ -297,6 +302,10 @@
     </section>
 
     <section id="workspaceRight" hidden>
+      <div class="card" id="parcelSummaryCard" hidden>
+        <h2 data-en="Selected fields">Parcelas seleccionadas</h2>
+        <div id="parcelSummary" class="parcel-summary" aria-live="polite"></div>
+      </div>
       <div class="card" id="diagnosisCard">
         <h2 data-en="Your field diagnosis (NASA POWER + terrain)">Diagnostico de tu Parcela (NASA POWER + Terreno DEM/SRTM)</h2>
         <p class="small" data-en="Select a saved field to view its diagnosis.">Selecciona una parcela guardada para ver su diagnóstico.</p>
@@ -320,6 +329,9 @@
     let lastData = null;
     let parcels = [];
     let selectedParcelId = null;
+    let selectedParcelIds = new Set();
+    let analysisRun = 0;
+    let selectionTimer = null;
     let csrfToken = null;
     let profileName = '';
     let profilePhoneLast4 = '';
@@ -332,6 +344,7 @@
       'Código inválido': 'Invalid code.',
       'Código vencido o ya utilizado': 'Code expired or already used.',
       'Parcela no encontrada': 'Field not found.',
+      'Selecciona al menos una parcela': 'Select at least one field.',
       'Máximo 8 parcelas por cuenta': 'Maximum of 8 fields per account.',
       'Ponle un nombre a la parcela': 'Give the field a name.',
       'NASA POWER no disponible; no se generan recomendaciones con datos sinteticos': 'NASA POWER is unavailable; no recommendation is generated from synthetic data.',
@@ -365,7 +378,7 @@
         layerControl.remove();
         layerControl = buildLayerControl();
       }
-      if (selectedParcelId) runAnalysis();
+      if (selectedParcelIds.size) runAnalysis();
     }
 
     async function api(path, body, withCsrf = false) {
@@ -415,6 +428,8 @@
       profilePhoneLast4 = profile.phone_last4;
       csrfToken = profile.csrf;
       parcels = profile.parcels;
+      selectedParcelIds = new Set([...selectedParcelIds].filter(id => parcels.some(parcel => parcel.id === id)));
+      if (!selectedParcelIds.has(selectedParcelId)) selectedParcelId = selectedParcelIds.values().next().value || null;
       document.getElementById('onboardingCard').hidden = true;
       document.getElementById('workspaceLeft').hidden = false;
       document.getElementById('workspaceRight').hidden = false;
@@ -430,27 +445,43 @@
         const button = document.createElement('button');
         button.type = 'button';
         button.textContent = parcel.name;
-        button.classList.toggle('active', parcel.id === selectedParcelId);
-        button.setAttribute('aria-pressed', parcel.id === selectedParcelId ? 'true' : 'false');
+        button.classList.toggle('active', selectedParcelIds.has(parcel.id));
+        button.classList.toggle('focused', parcel.id === selectedParcelId);
+        button.setAttribute('aria-pressed', selectedParcelIds.has(parcel.id) ? 'true' : 'false');
         button.onclick = () => selectParcel(parcel.id);
         list.append(button);
       }
       if (!parcels.length) status('parcelStatus', tr('Aún no tienes parcelas. Ubica la primera en el mapa y guárdala.',
                                                      'No saved fields yet. Locate the first one on the map and save it.'));
-      document.getElementById('analyzeButton').disabled = !selectedParcelId;
+      document.getElementById('analyzeButton').disabled = !selectedParcelIds.size;
     }
 
     function selectParcel(id) {
       const parcel = parcels.find(item => item.id === id);
       if (!parcel) return;
-      selectedParcelId = id;
-      selectedLat = parcel.lat; selectedLon = parcel.lon;
+      analysisRun++;
+      if (selectedParcelIds.has(id)) {
+        selectedParcelIds.delete(id);
+        if (selectedParcelId === id) selectedParcelId = selectedParcelIds.values().next().value || null;
+      } else {
+        selectedParcelIds.add(id);
+        selectedParcelId = id;
+      }
+      const focused = parcels.find(item => item.id === selectedParcelId) || parcel;
+      selectedLat = focused.lat; selectedLon = focused.lon;
       marker.setLatLng([selectedLat, selectedLon]);
       map.setView([selectedLat, selectedLon], Math.max(map.getZoom(), 9));
       document.getElementById('coordsLabel').textContent = `${tr('Coordenada', 'Coordinates')}: ${selectedLat}, ${selectedLon}`;
       renderParcelList();
-      status('parcelStatus', `${tr('Parcela seleccionada', 'Selected field')}: ${parcel.name}`);
-      runAnalysis();
+      status('parcelStatus', `${selectedParcelIds.size} ${selectedParcelIds.size === 1 ? tr('parcela seleccionada', 'selected field') : tr('parcelas seleccionadas', 'selected fields')}`);
+      clearTimeout(selectionTimer);
+      if (selectedParcelIds.size) selectionTimer = setTimeout(runAnalysis, 250);
+      else {
+        lastData = null;
+        document.getElementById('parcelSummaryCard').hidden = true;
+        document.getElementById('diagnosisCard').textContent = tr('Selecciona una parcela para ver su diagnóstico.', 'Select a field to view its diagnosis.');
+        document.getElementById('strategiesContainer').replaceChildren();
+      }
     }
 
     async function saveParcel() {
@@ -466,7 +497,12 @@
         }, true);
         parcels.push(data);
         document.getElementById('parcelName').value = '';
-        selectParcel(data.id);
+        selectedParcelIds.add(data.id);
+        selectedParcelId = data.id;
+        analysisRun++;
+        renderParcelList();
+        clearTimeout(selectionTimer);
+        selectionTimer = setTimeout(runAnalysis, 250);
       } catch (error) { status('parcelStatus', error.message); }
     }
 
@@ -544,30 +580,53 @@
       document.getElementById('rainVal').textContent = `${r > 0 ? '+' : ''}${r}%`;
       document.getElementById('tempVal').textContent = `+${t} °C`;
       clearTimeout(sliderTimer);
-      if (selectedParcelId) sliderTimer = setTimeout(runAnalysis, 250);
+      if (selectedParcelIds.size) sliderTimer = setTimeout(runAnalysis, 250);
     }
 
     async function runAnalysis() {
-      if (!selectedParcelId) return;
+      if (!selectedParcelIds.size) return;
+      const run = ++analysisRun;
+      const ids = [...selectedParcelIds];
       const analyzingParcel = selectedParcelId;
       const analyzingLanguage = language;
+      const summaryCard = document.getElementById('parcelSummaryCard');
+      const summary = document.getElementById('parcelSummary');
+      summaryCard.hidden = false;
+      summary.replaceChildren();
       document.getElementById('diagnosisCard').innerHTML = `<h2>${tr('Diagnóstico', 'Diagnosis')}</h2><p>${tr('Consultando datos NASA...', 'Fetching NASA data...')}</p>`;
       const payload = {
         rain_delta_pct: Number(document.getElementById('rainSlider').value),
         temp_delta_c: Number(document.getElementById('tempSlider').value),
         language,
       };
-      try {
-      const result = await api(`/v1/parcels/${analyzingParcel}/analyze`, payload, true);
-      if (analyzingParcel !== selectedParcelId || analyzingLanguage !== language) return;
-      lastData = result;
-      renderResults(lastData);
-      } catch (error) {
-        if (analyzingParcel !== selectedParcelId || analyzingLanguage !== language) return;
-        lastData = null;
-        document.getElementById('diagnosisCard').innerHTML = `<h2>${tr('Análisis no disponible', 'Analysis unavailable')}</h2><p id="analysisError"></p>`;
-        document.getElementById('analysisError').textContent = error.message;
-        document.getElementById('strategiesContainer').innerHTML = '';
+      for (const id of ids) {
+        if (run !== analysisRun || analyzingLanguage !== language) return;
+        const parcel = parcels.find(item => item.id === id);
+        const card = document.createElement('article');
+        const title = document.createElement('strong');
+        title.textContent = parcel.name;
+        const detail = document.createElement('span');
+        detail.textContent = tr('Consultando datos NASA...', 'Fetching NASA data...');
+        card.append(title, detail);
+        summary.append(card);
+        try {
+          const result = await api(`/v1/parcels/${id}/analyze`, payload, true);
+          if (run !== analysisRun || analyzingLanguage !== language) return;
+          detail.textContent = `${tr('Lluvia anual', 'Annual rain')}: ${result.diagnosis.annual_precip_mm} mm · ${tr('Opciones de rotación', 'Rotation options')}: ${result.strategies.length}`;
+          if (id === analyzingParcel) {
+            lastData = result;
+            renderResults(result);
+          }
+        } catch (error) {
+          if (run !== analysisRun || analyzingLanguage !== language) return;
+          detail.textContent = error.message;
+          if (id === analyzingParcel) {
+            lastData = null;
+            document.getElementById('diagnosisCard').innerHTML = `<h2>${tr('Análisis no disponible', 'Analysis unavailable')}</h2><p id="analysisError"></p>`;
+            document.getElementById('analysisError').textContent = error.message;
+            document.getElementById('strategiesContainer').replaceChildren();
+          }
+        }
       }
     }
 

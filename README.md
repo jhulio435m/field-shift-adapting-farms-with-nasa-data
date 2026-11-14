@@ -32,6 +32,8 @@ uv run pytest -q
 ## Kusi Kusi and farmer registration
 
 Field Shift includes a read-only adaptive source bridge and a parcel workflow.
+After verification, a farmer can save up to eight fields, select one or more,
+and review a separate NASA-based rotation analysis for each selected field.
 Kusi Kusi remains responsible for verified WhatsApp identity and messaging.
 The real channel callback, signed proof delivery, and source enrollment with
 per-user access controls are **not yet connected**. Without a configured
