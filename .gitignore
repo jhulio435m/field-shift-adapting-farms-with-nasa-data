@@ -1,0 +1,8 @@
+backend/.local-data/
+backend/.venv/
+backend/.pytest_cache/
+**/__pycache__/
+.impeccable/
+.agents/
+.codex/
+.aws

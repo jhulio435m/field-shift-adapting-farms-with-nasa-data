@@ -1,0 +1,733 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Field Shift — Sistema Adaptador al Cambio Climatico (NASA)</title>
+  <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+  <style>
+    :root {
+      --bg: #f4f7f2;
+      --card: #ffffff;
+      --ink: #1b2a1e;
+      --muted: #526356;
+      --accent: #2d6a4f;
+      --accent-soft: #d8f3dc;
+      --warn: #b45309;
+      --warn-soft: #fef3c7;
+      --danger: #b91c1c;
+      --danger-soft: #fee2e2;
+      --blue-soft: #dbeafe;
+      --blue: #1d4ed8;
+      --border: #d9e2dc;
+    }
+    * { box-sizing: border-box; }
+    body {
+      margin: 0;
+      font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
+      background: var(--bg);
+      color: var(--ink);
+      line-height: 1.45;
+    }
+    header {
+      background: #1b4332;
+      color: #fff;
+      padding: 14px 20px;
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: space-between;
+      align-items: center;
+      gap: 12px;
+    }
+    header h1 { margin: 0; font-size: 1.2rem; }
+    header p { margin: 2px 0 0; font-size: 0.85rem; color: #d8f3dc; }
+    .mode-toggle {
+      display: flex;
+      gap: 6px;
+      background: rgba(255,255,255,0.12);
+      padding: 4px;
+      border-radius: 8px;
+    }
+    .mode-toggle button {
+      border: 0;
+      padding: 6px 12px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      background: transparent;
+      color: #e6f4ea;
+    }
+    .mode-toggle button.active {
+      background: #fff;
+      color: #1b4332;
+    }
+    main {
+      max-width: 1320px;
+      margin: 18px auto;
+      padding: 0 16px 40px;
+      display: grid;
+      grid-template-columns: 380px 1fr;
+      gap: 18px;
+    }
+    @media (max-width: 960px) {
+      main { grid-template-columns: 1fr; }
+    }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 12px;
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    .card h2 { margin: 0 0 10px; font-size: 1.05rem; }
+    #map {
+      height: 260px;
+      border-radius: 10px;
+      border: 1px solid var(--border);
+      margin-bottom: 12px;
+    }
+    label {
+      display: block;
+      font-size: 0.85rem;
+      font-weight: 600;
+      margin: 10px 0 4px;
+    }
+    select, input[type="range"], input[type="text"], input[type="tel"] {
+      width: 100%;
+      padding: 8px;
+      border-radius: 8px;
+      border: 1px solid var(--border);
+      background: #fff;
+      font-size: 0.92rem;
+    }
+    .checkbox-row {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      margin-top: 10px;
+      font-size: 0.88rem;
+      font-weight: 600;
+    }
+    .btn-primary {
+      width: 100%;
+      margin-top: 14px;
+      padding: 11px;
+      border: 0;
+      border-radius: 8px;
+      background: var(--accent);
+      color: #fff;
+      font-weight: 700;
+      font-size: 0.95rem;
+      cursor: pointer;
+    }
+    .btn-primary:hover { background: #23533d; }
+    .pill {
+      display: inline-block;
+      padding: 3px 9px;
+      border-radius: 999px;
+      font-size: 0.78rem;
+      font-weight: 700;
+      margin: 2px 6px 2px 0;
+    }
+    .pill-green { background: var(--accent-soft); color: #1b4332; }
+    .pill-warn { background: var(--warn-soft); color: var(--warn); }
+    .pill-red { background: var(--danger-soft); color: var(--danger); }
+    .pill-blue { background: var(--blue-soft); color: var(--blue); }
+    .strategy-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(290px, 1fr));
+      gap: 14px;
+    }
+    .strategy-card {
+      border: 1px solid var(--border);
+      border-radius: 10px;
+      padding: 14px;
+      background: #fcfdfc;
+    }
+    .strategy-card.current {
+      border-color: #cbd5e1;
+      background: #f8fafc;
+    }
+    .strategy-card h3 { margin: 6px 0; font-size: 1rem; }
+    .calendar {
+      display: grid;
+      grid-template-columns: repeat(12, 1fr);
+      gap: 3px;
+      margin: 10px 0;
+    }
+    .cal-cell {
+      text-align: center;
+      font-size: 0.7rem;
+      padding: 5px 2px;
+      border-radius: 4px;
+      font-weight: 700;
+    }
+    .cal-covered { background: #b7e4c7; color: #1b4332; }
+    .cal-bare_risk { background: #fecaca; color: #991b1b; }
+    .cal-frost_risk { background: #bfdbfe; color: #1e3a8a; }
+    .cal-water_stress { background: #fde68a; color: #92400e; }
+    ul { margin: 6px 0 10px; padding-left: 18px; font-size: 0.86rem; }
+    .small { font-size: 0.82rem; color: var(--muted); }
+    .banner {
+      background: #ecfdf5;
+      border: 1px solid #b7dfc8;
+      padding: 10px 12px;
+      border-radius: 6px;
+      font-size: 0.88rem;
+      margin-top: 10px;
+    }
+    .chart-box {
+      margin-top: 12px;
+      padding: 10px;
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      background: #fafcfa;
+    }
+    .evidence-panel { border: 1px solid var(--border); border-radius: 10px; padding: 14px; margin: 14px 0; background: #f8faf8; }
+    .evidence-panel h3 { margin: 0 0 10px; font-size: 1rem; }
+    .evidence-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(145px, 1fr)); gap: 8px; }
+    .evidence-metric { background: #fff; border: 1px solid var(--border); border-radius: 8px; padding: 10px; }
+    .evidence-metric strong { display: block; font-size: 1.2rem; font-variant-numeric: tabular-nums; }
+    .evidence-metric span { display: block; font-size: .78rem; color: var(--muted); }
+    .full-width { grid-column: 1 / -1; }
+    .step-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; }
+    .step-grid > div { min-width: 0; }
+    .status-line { min-height: 1.5em; color: var(--muted); }
+    .parcel-list { display: flex; flex-wrap: wrap; gap: 8px; margin: 12px 0; }
+    .parcel-list button { border: 1px solid var(--border); background: #fff; color: var(--ink); border-radius: 8px; padding: 9px 12px; cursor: pointer; }
+    .parcel-list button.active { border-color: var(--accent); background: var(--accent-soft); font-weight: 700; }
+    .btn-primary:disabled { opacity: .55; cursor: not-allowed; }
+    :focus-visible { outline: 3px solid #2563eb; outline-offset: 2px; }
+    @media (max-width: 600px) { .step-grid { grid-template-columns: 1fr; } #map { height: 230px; } }
+  </style>
+</head>
+<body>
+  <header>
+    <div>
+      <h1 data-en="Field Shift — Climate adaptation decision support">Field Shift — Sistema Adaptador al Cambio Climatico</h1>
+      <p data-en="NASA POWER climate and soil moisture + terrain slope + NASA GIBS · Open API">NASA POWER (clima, humedad, ET) + DEM (pendiente/erosion) + NASA GIBS · API disponible para integracion</p>
+    </div>
+    <div class="mode-toggle">
+      <button id="btnFarmer" class="active" onclick="setMode('farmer')" data-en="Farmer view">Vista Agricultor</button>
+      <button id="btnAgro" onclick="setMode('agronomist')" data-en="Agronomist view">Vista Agronomo</button>
+      <select id="languageSelect" aria-label="Idioma / Language" onchange="setLanguage(this.value)" style="width:auto;padding:6px;background:#fff;color:#1b4332;border:0;"><option value="es">Español</option><option value="en">English</option></select>
+    </div>
+  </header>
+
+  <main>
+    <section class="card full-width" id="onboardingCard">
+      <h2 data-en="1. Create your profile and verify WhatsApp">1. Crea tu perfil y valida tu WhatsApp</h2>
+      <p class="small" data-en="Kusi Kusi confirms your number before you can save or analyse fields.">Tu número se confirma mediante Kusi Kusi antes de guardar o analizar parcelas.</p>
+      <div class="step-grid">
+        <div><label for="farmerName" data-en="Your name">Tu nombre</label><input id="farmerName" type="text" autocomplete="name" maxlength="100" placeholder="Nombre y apellido" data-en-placeholder="Full name" /></div>
+        <div><label for="farmerPhone" data-en="WhatsApp with country code">WhatsApp con código de país</label><input id="farmerPhone" type="tel" autocomplete="tel" placeholder="+51999999999" /></div>
+      </div>
+      <button class="btn-primary" id="startButton" onclick="startRegistration()" data-en="Request verification">Solicitar validación</button>
+      <div id="verificationStep" hidden>
+        <p class="banner"><span data-en="Send this identifier from your WhatsApp linked to Kusi Kusi:">Envía este identificador desde tu WhatsApp vinculado a Kusi Kusi:</span> <strong id="challengeText"></strong>. <span data-en="After Kusi Kusi confirms the number, it will send you a one-time access code.">Cuando Kusi Kusi confirme el número, te enviará un código de acceso de un solo uso.</span></p>
+        <label for="claimCode" data-en="Code received on WhatsApp">Código recibido por WhatsApp</label>
+        <input id="claimCode" type="text" autocomplete="one-time-code" />
+        <button class="btn-primary" onclick="claimRegistration()" data-en="Verify and continue">Validar y continuar</button>
+      </div>
+      <p class="status-line" id="onboardingStatus" role="status"></p>
+    </section>
+    <section id="workspaceLeft" hidden>
+      <div class="card">
+        <h2 data-en="2. Save your fields">2. Guarda tus parcelas</h2>
+        <div id="profileSummary" class="small"></div>
+        <div id="parcelList" class="parcel-list" aria-label="Tus parcelas"></div>
+        <label for="parcelName" data-en="Field name">Nombre de la parcela</label>
+        <input id="parcelName" type="text" maxlength="80" placeholder="Ej. Lote de papa" data-en-placeholder="E.g. potato field" />
+        <p class="small" data-en="Click the map to locate the field you want to save.">Haz clic en el mapa para ubicar la parcela que vas a guardar.</p>
+        <div id="map"></div>
+        <p class="small" data-en="Map overlays show historical example imagery from 2024. The latest available point NDVI appears in the diagnosis.">Las capas del mapa muestran imágenes históricas de ejemplo de 2024. El NDVI puntual más reciente disponible aparece en el diagnóstico.</p>
+        <div class="small" id="coordsLabel">Coordenada: -12.0650, -75.2049 (haz clic en el mapa)</div>
+
+        <label for="currentCrop" data-en="What do you grow now?">Que siembras hoy?</label>
+        <select id="currentCrop">
+          <option value="maize_continuous" data-en="Continuous maize">Maiz continuo</option>
+          <option value="potato_continuous" data-en="Continuous potato">Papa continua</option>
+          <option value="wheat_continuous" data-en="Continuous wheat / cereal">Trigo / cereal continuo</option>
+          <option value="rice_continuous" data-en="Continuous rice">Arroz continuo</option>
+          <option value="mixed_vegetables" data-en="Mixed vegetables">Hortalizas mixtas</option>
+        </select>
+
+        <label for="irrigation" data-en="How do you irrigate?">Como riegas?</label>
+        <select id="irrigation">
+          <option value="rainfed" data-en="Rainfed">Solo lluvia (secano)</option>
+          <option value="limited" data-en="Limited irrigation">Riego limitado</option>
+          <option value="irrigated" data-en="Irrigation available">Riego disponible</option>
+        </select>
+
+        <label for="soilTexture" data-en="What is your soil like?">Como es tu suelo?</label>
+        <select id="soilTexture">
+          <option value="unknown" data-en="I'm not sure">No estoy seguro</option>
+          <option value="loam" data-en="Loam">Franco (suelto y fertil)</option>
+          <option value="sandy" data-en="Sandy">Arenoso (seca rapido)</option>
+          <option value="clay" data-en="Clay">Arcilloso (retiene agua / pesado)</option>
+        </select>
+
+        <label for="priority" data-en="What matters most today?">Que priorizas hoy?</label>
+        <select id="priority">
+          <option value="water" data-en="Save water and handle drought">Ahorrar agua y aguantar sequia</option>
+          <option value="soil_health" data-en="Build soil and limit erosion">Recuperar suelo y frenar erosion</option>
+          <option value="pest_disruption" data-en="Interrupt pests and disease">Cortar plagas y enfermedades</option>
+          <option value="forage_income" data-en="Forage and extra income">Forraje e ingreso suplementario</option>
+        </select>
+
+        <div class="checkbox-row">
+          <input type="checkbox" id="hasLivestock" />
+          <label for="hasLivestock" style="margin:0;" data-en="I keep livestock (need forage)">Tengo animales (necesito forraje)</label>
+        </div>
+
+        <button class="btn-primary" onclick="saveParcel()" data-en="Save field">Guardar parcela</button>
+        <p class="status-line" id="parcelStatus" role="status"></p>
+        <button class="btn-primary" id="analyzeButton" onclick="runAnalysis()" disabled data-en="Analyse selected field">Analizar parcela seleccionada</button>
+      </div>
+
+      <div class="card agro-only" style="display:none;">
+        <h2 data-en="3. Climate scenario">3. Simulador de Clima Futuro</h2>
+        <label for="rainSlider">Cambio en lluvia: <strong id="rainVal">0%</strong></label>
+        <input type="range" id="rainSlider" min="-40" max="30" step="5" value="0" oninput="updateSliders()" />
+
+        <label for="tempSlider">Cambio en temperatura: <strong id="tempVal">+0.0 °C</strong></label>
+        <input type="range" id="tempSlider" min="0" max="3.5" step="0.5" value="0" oninput="updateSliders()" />
+        <p class="small" data-en="Adjust rainfall and temperature to compare rotations under a drier or warmer scenario.">Mueve los controles para ver como aguanta cada rotacion en un ano mas seco o caluroso.</p>
+      </div>
+    </section>
+
+    <section id="workspaceRight" hidden>
+      <div class="card" id="diagnosisCard">
+        <h2 data-en="Your field diagnosis (NASA POWER + terrain)">Diagnostico de tu Parcela (NASA POWER + Terreno DEM/SRTM)</h2>
+        <p class="small" data-en="Select a saved field to view its diagnosis.">Selecciona una parcela guardada para ver su diagnóstico.</p>
+      </div>
+
+      <div class="card">
+        <h2 data-en="Rotation ideas for local review (4 options)">Ideas de rotacion para revision local (4 opciones)</h2>
+        <div id="strategiesContainer" class="strategy-grid"></div>
+        <div class="banner" id="reminderBox" data-en="NASA data supports your decisions, but does not replace your experience or a local agronomist's review.">
+          Esta herramienta apoya tus decisiones con datos de la NASA, pero no reemplaza tu experiencia ni la revision de un agronomo local.
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+  <script>
+    let selectedLat = -12.0650;
+    let selectedLon = -75.2049;
+    let viewMode = 'farmer';
+    let lastData = null;
+    let parcels = [];
+    let selectedParcelId = null;
+    let csrfToken = null;
+    let profileName = '';
+    let profilePhoneLast4 = '';
+    let language = localStorage.getItem('fieldShiftLanguage') === 'en' ? 'en' : 'es';
+    const tr = (es, en) => language === 'en' ? en : es;
+    const englishErrors = {
+      'Verificación Kusi Kusi no configurada': 'Kusi Kusi verification is not configured.',
+      'Demasiados intentos; espera diez minutos': 'Too many attempts; wait ten minutes.',
+      'Prueba de canal inválida': 'Invalid channel proof.',
+      'Código inválido': 'Invalid code.',
+      'Código vencido o ya utilizado': 'Code expired or already used.',
+      'Parcela no encontrada': 'Field not found.',
+      'Máximo 8 parcelas por cuenta': 'Maximum of 8 fields per account.',
+      'Ponle un nombre a la parcela': 'Give the field a name.',
+      'NASA POWER no disponible; no se generan recomendaciones con datos sinteticos': 'NASA POWER is unavailable; no recommendation is generated from synthetic data.',
+    };
+
+    function setLanguage(value) {
+      language = value === 'en' ? 'en' : 'es';
+      localStorage.setItem('fieldShiftLanguage', language);
+      document.documentElement.lang = language;
+      document.getElementById('languageSelect').value = language;
+      document.title = tr('Field Shift — Sistema Adaptador al Cambio Climático',
+                          'Field Shift — Climate adaptation decision support');
+      document.querySelectorAll('[data-en]').forEach(el => {
+        if (!el.dataset.es) el.dataset.es = el.textContent;
+        el.textContent = language === 'en' ? el.dataset.en : el.dataset.es;
+      });
+      document.querySelectorAll('[data-en-placeholder]').forEach(el => {
+        if (!el.dataset.esPlaceholder) el.dataset.esPlaceholder = el.placeholder;
+        el.placeholder = language === 'en' ? el.dataset.enPlaceholder : el.dataset.esPlaceholder;
+      });
+      document.querySelector('label[for="rainSlider"]').firstChild.textContent = tr('Cambio en lluvia: ', 'Rainfall change: ');
+      document.querySelector('label[for="tempSlider"]').firstChild.textContent = tr('Cambio en temperatura: ', 'Temperature change: ');
+      document.getElementById('coordsLabel').textContent = `${tr('Coordenada', 'Coordinates')}: ${selectedLat}, ${selectedLon}${selectedParcelId ? '' : tr(' (haz clic en el mapa)', ' (click the map)')}`;
+      if (profileName) document.getElementById('profileSummary').textContent = `${profileName} · ${tr('WhatsApp verificado, termina en', 'Verified WhatsApp, ending in')} ${profilePhoneLast4}`;
+      if (csrfToken) renderParcelList();
+      if (selectedParcelId) {
+        const chosen = parcels.find(item => item.id === selectedParcelId);
+        if (chosen) status('parcelStatus', `${tr('Parcela seleccionada', 'Selected field')}: ${chosen.name}`);
+      }
+      if (typeof layerControl !== 'undefined') {
+        layerControl.remove();
+        layerControl = buildLayerControl();
+      }
+      if (selectedParcelId) runAnalysis();
+    }
+
+    async function api(path, body, withCsrf = false) {
+      const response = await fetch(path, {
+        method: 'POST', credentials: 'same-origin',
+        headers: { 'Content-Type': 'application/json', ...(withCsrf ? { 'X-CSRF-Token': csrfToken } : {}) },
+        body: JSON.stringify(body),
+      });
+      const data = await response.json();
+      if (!response.ok) {
+        const detail = typeof data.detail === 'string' ? data.detail : `HTTP ${response.status}`;
+        throw new Error(language === 'en' ? (englishErrors[detail] || detail) : detail);
+      }
+      return data;
+    }
+
+    function status(id, message) { document.getElementById(id).textContent = message; }
+
+    async function startRegistration() {
+      const button = document.getElementById('startButton');
+      button.disabled = true;
+      try {
+        const result = await api('/v1/onboarding/start', {
+          name: document.getElementById('farmerName').value.trim(),
+          phone: document.getElementById('farmerPhone').value.trim(),
+        });
+        document.getElementById('challengeText').textContent = result.challenge;
+        document.getElementById('verificationStep').hidden = false;
+        status('onboardingStatus', tr('Solicitud creada. El código vence en 10 minutos.',
+                                   'Request created. The code expires in 10 minutes.'));
+      } catch (error) { status('onboardingStatus', error.message); }
+      finally { button.disabled = false; }
+    }
+
+    async function claimRegistration() {
+      try {
+        await api('/v1/onboarding/claim', { code: document.getElementById('claimCode').value.trim() });
+        await loadProfile();
+      } catch (error) { status('onboardingStatus', error.message); }
+    }
+
+    async function loadProfile() {
+      const response = await fetch('/v1/me', { credentials: 'same-origin' });
+      if (!response.ok) return;
+      const profile = await response.json();
+      profileName = profile.name;
+      profilePhoneLast4 = profile.phone_last4;
+      csrfToken = profile.csrf;
+      parcels = profile.parcels;
+      document.getElementById('onboardingCard').hidden = true;
+      document.getElementById('workspaceLeft').hidden = false;
+      document.getElementById('workspaceRight').hidden = false;
+      document.getElementById('profileSummary').textContent = `${profile.name} · ${tr('WhatsApp verificado, termina en', 'Verified WhatsApp, ending in')} ${profile.phone_last4}`;
+      renderParcelList();
+      setTimeout(() => map.invalidateSize(), 0);
+    }
+
+    function renderParcelList() {
+      const list = document.getElementById('parcelList');
+      list.replaceChildren();
+      for (const parcel of parcels) {
+        const button = document.createElement('button');
+        button.type = 'button';
+        button.textContent = parcel.name;
+        button.classList.toggle('active', parcel.id === selectedParcelId);
+        button.setAttribute('aria-pressed', parcel.id === selectedParcelId ? 'true' : 'false');
+        button.onclick = () => selectParcel(parcel.id);
+        list.append(button);
+      }
+      if (!parcels.length) status('parcelStatus', tr('Aún no tienes parcelas. Ubica la primera en el mapa y guárdala.',
+                                                     'No saved fields yet. Locate the first one on the map and save it.'));
+      document.getElementById('analyzeButton').disabled = !selectedParcelId;
+    }
+
+    function selectParcel(id) {
+      const parcel = parcels.find(item => item.id === id);
+      if (!parcel) return;
+      selectedParcelId = id;
+      selectedLat = parcel.lat; selectedLon = parcel.lon;
+      marker.setLatLng([selectedLat, selectedLon]);
+      map.setView([selectedLat, selectedLon], Math.max(map.getZoom(), 9));
+      document.getElementById('coordsLabel').textContent = `${tr('Coordenada', 'Coordinates')}: ${selectedLat}, ${selectedLon}`;
+      renderParcelList();
+      status('parcelStatus', `${tr('Parcela seleccionada', 'Selected field')}: ${parcel.name}`);
+      runAnalysis();
+    }
+
+    async function saveParcel() {
+      try {
+        const data = await api('/v1/parcels', {
+          name: document.getElementById('parcelName').value.trim(),
+          lat: selectedLat, lon: selectedLon,
+          current_crop: document.getElementById('currentCrop').value,
+          irrigation: document.getElementById('irrigation').value,
+          soil_texture: document.getElementById('soilTexture').value,
+          priority: document.getElementById('priority').value,
+          has_livestock: document.getElementById('hasLivestock').checked,
+        }, true);
+        parcels.push(data);
+        document.getElementById('parcelName').value = '';
+        selectParcel(data.id);
+      } catch (error) { status('parcelStatus', error.message); }
+    }
+
+    const osm = L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+      attribution: '&copy; OpenStreetMap'
+    });
+    const map = L.map('map', { layers: [osm] }).setView([selectedLat, selectedLon], 6);
+
+    // Capas historicas de demostracion; no representan el estado actual de la parcela.
+    const gibsTrueColor = L.tileLayer(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_CorrectedReflectance_TrueColor/default/2024-07-01/GoogleMapsCompatible_Level9/{z}/{y}/{x}.jpg',
+      { opacity: 0.45, maxZoom: 9, attribution: 'NASA GIBS' }
+    );
+    const gibsNdvi = L.tileLayer(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_NDVI_8Day/default/2024-07-01/GoogleMapsCompatible_Level9/{z}/{y}/{x}.png',
+      { opacity: 0.55, maxZoom: 9, attribution: 'NASA GIBS NDVI' }
+    );
+    const gibsPrecip = L.tileLayer(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/IMERG_Precipitation_Rate/default/2024-07-01T00:00:00Z/GoogleMapsCompatible_Level6/{z}/{y}/{x}.png',
+      { opacity: 0.55, maxZoom: 6, attribution: 'NASA GPM IMERG' }
+    );
+    const gibsLstNight = L.tileLayer(
+      'https://gibs.earthdata.nasa.gov/wmts/epsg3857/best/MODIS_Terra_Land_Surface_Temp_Night/default/2024-07-01/GoogleMapsCompatible_Level7/{z}/{y}/{x}.png',
+      { opacity: 0.55, maxZoom: 7, attribution: 'NASA GIBS LST Night (Heladas)' }
+    );
+    function buildLayerControl() {
+      return L.control.layers(
+        { [tr('Mapa base (OSM)', 'Base map (OSM)')]: osm },
+        {
+          'NASA MODIS TrueColor (2024-07-01)': gibsTrueColor,
+          'NASA MODIS NDVI (2024-07-01)': gibsNdvi,
+          'NASA GPM IMERG (2024-07-01)': gibsPrecip,
+          [tr('NASA MODIS temperatura nocturna (2024-07-01)', 'NASA MODIS night temperature (2024-07-01)')]: gibsLstNight,
+        }
+      ).addTo(map);
+    }
+    let layerControl = buildLayerControl();
+
+    function toggleFrostPanel() {
+      const panel = document.getElementById('midagriFrostPanel');
+      panel.style.display = panel.style.display === 'none' ? 'block' : 'none';
+    }
+
+    function selectMidagriTool(url) {
+      document.getElementById('midagriIframe').src = url;
+      document.getElementById('midagriExternalLink').href = url;
+      document.getElementById('midagriFrostPanel').style.display = 'block';
+    }
+
+    const marker = L.marker([selectedLat, selectedLon]).addTo(map);
+
+    map.on('click', (e) => {
+      selectedLat = Number(e.latlng.lat.toFixed(4));
+      selectedLon = Number(e.latlng.lng.toFixed(4));
+      marker.setLatLng([selectedLat, selectedLon]);
+      document.getElementById('coordsLabel').textContent = `${tr('Coordenada', 'Coordinates')}: ${selectedLat}, ${selectedLon}`;
+      status('parcelStatus', tr('Ubicación elegida. Escribe un nombre y guarda esta parcela.',
+                                'Location selected. Name and save this field.'));
+    });
+
+    function setMode(mode) {
+      viewMode = mode;
+      document.getElementById('btnFarmer').classList.toggle('active', mode === 'farmer');
+      document.getElementById('btnAgro').classList.toggle('active', mode === 'agronomist');
+      document.querySelectorAll('.agro-only').forEach((el) => {
+        el.style.display = mode === 'agronomist' ? 'block' : 'none';
+      });
+      if (lastData) renderResults(lastData);
+    }
+
+    let sliderTimer = null;
+    function updateSliders() {
+      const r = document.getElementById('rainSlider').value;
+      const t = Number(document.getElementById('tempSlider').value).toFixed(1);
+      document.getElementById('rainVal').textContent = `${r > 0 ? '+' : ''}${r}%`;
+      document.getElementById('tempVal').textContent = `+${t} °C`;
+      clearTimeout(sliderTimer);
+      if (selectedParcelId) sliderTimer = setTimeout(runAnalysis, 250);
+    }
+
+    async function runAnalysis() {
+      if (!selectedParcelId) return;
+      const analyzingParcel = selectedParcelId;
+      const analyzingLanguage = language;
+      document.getElementById('diagnosisCard').innerHTML = `<h2>${tr('Diagnóstico', 'Diagnosis')}</h2><p>${tr('Consultando datos NASA...', 'Fetching NASA data...')}</p>`;
+      const payload = {
+        rain_delta_pct: Number(document.getElementById('rainSlider').value),
+        temp_delta_c: Number(document.getElementById('tempSlider').value),
+        language,
+      };
+      try {
+      const result = await api(`/v1/parcels/${analyzingParcel}/analyze`, payload, true);
+      if (analyzingParcel !== selectedParcelId || analyzingLanguage !== language) return;
+      lastData = result;
+      renderResults(lastData);
+      } catch (error) {
+        if (analyzingParcel !== selectedParcelId || analyzingLanguage !== language) return;
+        lastData = null;
+        document.getElementById('diagnosisCard').innerHTML = `<h2>${tr('Análisis no disponible', 'Analysis unavailable')}</h2><p id="analysisError"></p>`;
+        document.getElementById('analysisError').textContent = error.message;
+        document.getElementById('strategiesContainer').innerHTML = '';
+      }
+    }
+
+    function buildMonthlyChart(monthly) {
+      const maxVal = Math.max(100, ...monthly.map(m => Math.max(m.precip_mm_month, m.evapotranspiration_mm_month)));
+      const w = 620, h = 130, pad = 22;
+      const colW = (w - pad * 2) / 12;
+      const bars = monthly.map((m, i) => {
+        const x = pad + i * colW + 4;
+        const pH = (m.precip_mm_month / maxVal) * (h - 32);
+        const eH = (m.evapotranspiration_mm_month / maxVal) * (h - 32);
+        return `
+          <rect x="${x}" y="${h - 20 - pH}" width="12" height="${pH}" fill="#2d6a4f" rx="2">
+            <title>${m.month_label}: ${tr('Lluvia', 'Rain')} ${m.precip_mm_month} mm</title>
+          </rect>
+          <rect x="${x + 14}" y="${h - 20 - eH}" width="12" height="${eH}" fill="#d97706" rx="2">
+            <title>${m.month_label}: ${tr('Evapotranspiración', 'Evapotranspiration')} ${m.evapotranspiration_mm_month} mm</title>
+          </rect>
+          <text x="${x + 13}" y="${h - 6}" font-size="10" text-anchor="middle" fill="#526356">${m.month_label}</text>
+        `;
+      }).join('');
+      return `
+        <div class="chart-box">
+          <div class="small" style="margin-bottom:4px;">
+            <strong>${tr('Balance mensual (mm):', 'Monthly balance (mm):')}</strong>
+            <span style="color:#2d6a4f;font-weight:700;">■ ${tr('Lluvia', 'Rain')}</span> ·
+            <span style="color:#d97706;font-weight:700;">■ ${tr('Evapotranspiración', 'Evapotranspiration')}</span>
+          </div>
+          <svg viewBox="0 0 ${w} ${h}" style="width:100%;height:auto;display:block;">
+            <line x1="${pad}" y1="${h - 20}" x2="${w - pad}" y2="${h - 20}" stroke="#cbd5e1" />
+            ${bars}
+          </svg>
+        </div>
+      `;
+    }
+
+    function renderResults(data) {
+      const d = data.diagnosis;
+      const diagEl = document.getElementById('diagnosisCard');
+      const summary = viewMode === 'farmer' ? d.farmer_summary : d.agronomist_summary;
+      const badgeClass = d.live_nasa_data ? 'pill-green' : 'pill-warn';
+      const badgeText = d.live_nasa_data ? tr('NASA POWER consultado', 'NASA POWER retrieved') : tr('NASA POWER no disponible', 'NASA POWER unavailable');
+      const terrainBadge = d.terrain.live_terrain_data
+        ? `${tr('Altitud', 'Elevation')}: ${d.terrain.elevation_m} m · ${tr('Pendiente', 'Slope')}: ${d.terrain.slope_pct}% (${d.terrain.erosion_risk})`
+        : tr('Terreno sin datos', 'Terrain data unavailable');
+
+      const wa = d.weekly_alerts;
+      let alertHtml = '';
+      if (wa) {
+        const alertBg = wa.alert_level === 'storm' ? '#fee2e2'
+          : wa.alert_level === 'frost' ? '#dbeafe'
+          : wa.alert_level === 'rain' ? '#fef3c7'
+          : '#ecfdf5';
+        const daysRow = (wa.days || []).map(day => {
+          const icon = day.is_storm ? '⛈️' : (day.is_frost ? '❄️' : (day.is_rain ? '🌧️' : '☀️'));
+          return `<div style="flex:1;min-width:72px;padding:6px;border:1px solid #d9e2dc;border-radius:6px;text-align:center;font-size:0.75rem;background:#fff;">
+            <div><strong>${day.date.slice(5)}</strong> ${icon}</div>
+            <div>${day.precip_mm} mm (${day.precip_prob_pct}%)</div>
+            <div class="small">${day.temp_min_c}°/${day.temp_max_c}°</div>
+          </div>`;
+        }).join('');
+        alertHtml = `
+          <div style="background:${alertBg};padding:10px 12px;border-radius:6px;margin:10px 0;font-size:0.88rem;">
+            <strong>${tr('Pronóstico de 7 días', '7-day forecast')} (${wa.source}):</strong> ${wa.farmer_alert_message}
+            <div style="display:flex;flex-wrap:wrap;gap:6px;margin-top:8px;">${daysRow}</div>
+          </div>
+        `;
+      }
+
+      const hc = d.historical_correlation;
+      const historyOk = hc && hc.live_historical;
+      const ndviOk = hc && hc.latest_ndvi !== null && hc.latest_ndvi !== undefined;
+      const unavailable = tr('Sin datos', 'Unavailable');
+      const metric = (value, label) => `<div class="evidence-metric"><strong>${value}</strong><span>${label}</span></div>`;
+      const vegetation = {
+        suelo_desnudo_o_sin_cobertura: tr('NDVI bajo; verificar cobertura', 'Low NDVI; verify cover'),
+        cobertura_baja_o_estres: tr('NDVI intermedio; causa incierta', 'Intermediate NDVI; cause uncertain'),
+        vegetacion_vigorosa: tr('NDVI alto; salud no verificada', 'High NDVI; crop health unverified'),
+      };
+      const historyText = hc ? (viewMode === 'farmer' ? hc.correlation_interpretation_farmer : hc.correlation_interpretation_agronomist) :
+        tr('La serie histórica no está disponible.', 'Historical series unavailable.');
+      const evidenceHtml = `
+        <div class="evidence-panel">
+          <h3>${tr('Qué muestran los datos abiertos', 'What the open data shows')}</h3>
+          <div class="evidence-grid">
+            ${metric(historyOk ? `${hc.temp_trend_c_per_decade > 0 ? '+' : ''}${hc.temp_trend_c_per_decade} °C` : unavailable,
+                     tr('Tendencia de temperatura por década · NASA POWER 2005–2024', 'Temperature trend per decade · NASA POWER 2005–2024'))}
+            ${metric(historyOk ? `r = ${hc.rain_soil_moisture_corr}` : unavailable,
+                     tr('Lluvia ↔ humedad superficial estimada · correlación mensual', 'Rain ↔ modelled surface soil moisture · monthly correlation'))}
+            ${metric(ndviOk ? `${hc.latest_ndvi}` : unavailable,
+                     `Sentinel-2 NDVI 10 m · ${ndviOk ? hc.latest_ndvi_date : tr('sin escena válida', 'no valid scene')}`)}
+          </div>
+          <p class="small">${historyText}</p>
+          ${ndviOk ? `<p class="small">${vegetation[hc.vegetation_status] || ''}. ${tr('Lectura puntual de una escena, no promedio de toda la parcela.', 'Point reading from one scene, not a whole-field average.')}</p>` : ''}
+          <p class="small">${tr('Fuentes: NASA POWER mensual 2005–2024; Sentinel-2 L2A vía STAC/TiTiler. La correlación no demuestra causalidad y el NDVI no mide directamente rendimiento o salud del cultivo.',
+                               'Sources: NASA POWER monthly 2005–2024; Sentinel-2 L2A via STAC/TiTiler. Correlation does not prove causation; NDVI does not directly measure yield or crop health.')}</p>
+        </div>`;
+
+      const badgesHtml = viewMode === 'farmer'
+        ? `
+          <span class="pill ${badgeClass}">${d.live_nasa_data ? tr('Climatología histórica NASA', 'NASA historical climatology') : tr('Datos NASA no disponibles', 'NASA data unavailable')}</span>
+          ${d.terrain.live_terrain_data ? `<span class="pill pill-blue">${tr('Pendiente estimada', 'Estimated slope')}: ${d.terrain.slope_pct}%</span>` : ''}
+          ${d.frost_risk_months.length ? `<span class="pill pill-red">${tr('Meses con riesgo de helada', 'Frost-risk months')}: ${d.frost_risk_months.length}</span>` : ''}
+        `
+        : `
+          <span class="pill ${badgeClass}">${badgeText}</span>
+          <span class="pill pill-blue">${terrainBadge}</span>
+          <span class="pill pill-green">${tr('Lluvia', 'Rain')}: ${d.annual_precip_mm} mm | ET: ${d.annual_et_mm} mm</span>
+          <span class="pill pill-warn">${tr('Temp. media', 'Mean temp.')}: ${d.annual_temp_mean_c} °C</span>
+          <span class="pill pill-blue">${tr('Humedad superficial estimada', 'Modelled surface moisture')}: ${(d.avg_soil_moisture_top * 100).toFixed(0)}%</span>
+          ${d.frost_risk_months.length ? `<span class="pill pill-red">${tr('Heladas', 'Frost')}: ${d.frost_risk_months.length} ${tr('meses', 'months')}</span>` : ''}
+        `;
+
+      const technicalDetailsHtml = viewMode === 'agronomist'
+        ? `${buildMonthlyChart(d.monthly)}<p class="small" style="margin-top:8px;">${tr('Fuentes', 'Sources')}: ${d.data_source} · ${d.terrain.terrain_source}</p>`
+        : '';
+
+      diagEl.innerHTML = `
+        <h2>${viewMode === 'farmer' ? tr('Resumen de tu parcela', 'Your field summary') : `${tr('Diagnóstico de tu parcela', 'Your field diagnosis')} (${d.lat}, ${d.lon})`}</h2>
+        <div style="margin-bottom:8px;">${badgesHtml}</div>
+        ${alertHtml}
+        <p>${summary}</p>
+        ${evidenceHtml}
+        ${technicalDetailsHtml}
+      `;
+
+      const container = document.getElementById('strategiesContainer');
+      container.innerHTML = data.strategies.map((s) => {
+        const why = viewMode === 'farmer' ? s.why_suggested_farmer : s.why_suggested_agronomist;
+        const calHtml = s.monthly_calendar.map(c =>
+          `<div class="cal-cell cal-${c.status}" title="${c.month_label}: ${c.crop_or_cover}">${c.month_label}</div>`
+        ).join('');
+        return `
+          <div class="strategy-card ${s.is_current ? 'current' : ''}">
+            <div>
+              <span class="pill ${s.is_current ? 'pill-warn' : 'pill-green'}">
+                ${s.is_current ? tr('Actual', 'Current') : `${tr('Idea para evaluar · Índice orientativo', 'Option to review · Indicative index')} ${s.fit_score}/100`}
+              </span>
+              <span class="pill pill-warn">${tr('Agua', 'Water demand')}: ${{low: tr('baja', 'low'), medium: tr('media', 'medium'), high: tr('alta', 'high')}[s.water_demand_level]}</span>
+            </div>
+            <h3>${s.name}</h3>
+            <p class="small"><strong>${tr('Secuencia', 'Sequence')}:</strong> ${s.sequence.join(' → ')}</p>
+            <p>${why}</p>
+            <div class="small"><strong>${tr('Calendario ilustrativo (requiere fechas de siembra y validación local)', 'Illustrative calendar (planting dates and local validation required)')}:</strong></div>
+            <div class="calendar">${calHtml}</div>
+            <strong>${tr('Evidencia', 'Evidence')}:</strong>
+            <ul>${s.evidence.map(e => `<li>${e}</li>`).join('')}</ul>
+            <strong>${tr('Beneficios', 'Potential benefits')}:</strong>
+            <ul>${s.benefits.map(b => `<li>${b}</li>`).join('')}</ul>
+            <strong>${tr('Vacíos de información (que revisar en campo)', 'Information gaps and field checks')}:</strong>
+            <ul>${s.information_gaps.concat(s.local_review_needed).map(g => `<li>${g}</li>`).join('')}</ul>
+          </div>
+        `;
+      }).join('');
+
+      document.getElementById('reminderBox').textContent = data.human_judgment_reminder;
+    }
+
+    setLanguage(language);
+    loadProfile();
+  </script>
+</body>
+</html>
