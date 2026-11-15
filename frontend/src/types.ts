@@ -35,6 +35,7 @@ export interface Parcel {
   has_livestock: boolean;
   area_ha?: number | null;
   planting_month?: number | null;
+  polygon?: [number, number][] | null;
 }
 
 export interface FarmerProfile {

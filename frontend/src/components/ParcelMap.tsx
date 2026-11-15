@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import L from 'leaflet';
 import 'leaflet/dist/leaflet.css';
 import {
+  Check,
   ChevronDown,
   ChevronUp,
   CircleDot,
@@ -10,11 +11,21 @@ import {
   Layers,
   Map as MapIcon,
   Mountain,
+  PenTool,
   Plus,
+  RotateCcw,
   Snowflake,
   Sprout,
+  Trash2,
+  X,
 } from 'lucide-react';
 import { tr } from '../i18n';
+import {
+  computePolygonAreaHa,
+  computePolygonCentroid,
+  computePolygonPerimeterM,
+  getEffectivePolygon,
+} from '../lib/parcelGeometry';
 import type { Language, Parcel, ParcelDiagnosis } from '../types';
 import { Button } from './ui/button';
 
@@ -40,9 +51,16 @@ interface ParcelMapProps {
   parcels?: Parcel[];
   focusedParcel?: Parcel | null;
   diagnosis?: ParcelDiagnosis | null;
+  externalDrawTrigger?: number;
   onSelectCoords: (lat: number, lon: number) => void;
   onSelectParcel?: (id: string) => void;
   onStartNewParcelAtCoords?: () => void;
+  onApplyDrawnPolygon?: (
+    polygon: [number, number][],
+    areaHa: number,
+    centroidLat: number,
+    centroidLon: number,
+  ) => void;
 }
 
 interface FilterOptionConfig {
@@ -82,9 +100,11 @@ export function ParcelMap({
   parcels = [],
   focusedParcel = null,
   diagnosis = null,
+  externalDrawTrigger = 0,
   onSelectCoords,
   onSelectParcel,
   onStartNewParcelAtCoords,
+  onApplyDrawnPolygon,
 }: ParcelMapProps) {
   const [baseMap, setBaseMap] = useState<BaseMapKey>('osm');
   const [activeFilter, setActiveFilter] = useState<NasaFilterKey>('none');
@@ -92,14 +112,18 @@ export function ParcelMap({
   const [layerOpacity, setLayerOpacity] = useState<number>(0.7);
   const [showHalo, setShowHalo] = useState<boolean>(true);
   const [controlsOpen, setControlsOpen] = useState<boolean>(false);
+  const [isDrawing, setIsDrawing] = useState<boolean>(false);
+  const [draftVertices, setDraftVertices] = useState<[number, number][]>([]);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controlsOverlayRef = useRef<HTMLDivElement | null>(null);
   const legendOverlayRef = useRef<HTMLDivElement | null>(null);
+  const drawOverlayRef = useRef<HTMLDivElement | null>(null);
   const mapRef = useRef<L.Map | null>(null);
   const pinMarkerRef = useRef<L.Marker | null>(null);
   const parcelGroupRef = useRef<L.LayerGroup | null>(null);
   const thematicGroupRef = useRef<L.LayerGroup | null>(null);
+  const drawGroupRef = useRef<L.LayerGroup | null>(null);
   const baseLayersRef = useRef<Record<BaseMapKey, L.TileLayer> | null>(null);
   const overlayLayersRef = useRef<Record<Exclude<NasaFilterKey, 'none'>, L.TileLayer> | null>(null);
 
@@ -107,6 +131,9 @@ export function ParcelMap({
   onSelectRef.current = onSelectCoords;
   const onSelectParcelRef = useRef(onSelectParcel);
   onSelectParcelRef.current = onSelectParcel;
+  const isDrawingRef = useRef(isDrawing);
+  isDrawingRef.current = isDrawing;
+  const lastDrawTriggerRef = useRef(externalDrawTrigger);
 
   useEffect(() => {
     if (!containerRef.current || mapRef.current) return;
@@ -161,9 +188,16 @@ export function ParcelMap({
     const map = L.map(containerRef.current, { layers: [osmLayer] }).setView([lat, lon], 7);
     const thematicGroup = L.layerGroup().addTo(map);
     const parcelGroup = L.layerGroup().addTo(map);
+    const drawGroup = L.layerGroup().addTo(map);
     const pinMarker = L.marker([lat, lon]).addTo(map);
 
     map.on('click', (e: L.LeafletMouseEvent) => {
+      if (isDrawingRef.current) {
+        const vLat = Number(e.latlng.lat.toFixed(6));
+        const vLon = Number(e.latlng.lng.toFixed(6));
+        setDraftVertices((prev) => [...prev, [vLat, vLon]]);
+        return;
+      }
       const nextLat = Number(e.latlng.lat.toFixed(4));
       const nextLon = Number(e.latlng.lng.toFixed(4));
       onSelectRef.current(nextLat, nextLon);
@@ -173,6 +207,7 @@ export function ParcelMap({
     pinMarkerRef.current = pinMarker;
     parcelGroupRef.current = parcelGroup;
     thematicGroupRef.current = thematicGroup;
+    drawGroupRef.current = drawGroup;
     baseLayersRef.current = {
       osm: osmLayer,
       satellite: satelliteLayer,
@@ -197,6 +232,7 @@ export function ParcelMap({
       pinMarkerRef.current = null;
       parcelGroupRef.current = null;
       thematicGroupRef.current = null;
+      drawGroupRef.current = null;
       baseLayersRef.current = null;
       overlayLayersRef.current = null;
     };
@@ -210,6 +246,10 @@ export function ParcelMap({
     if (legendOverlayRef.current) {
       L.DomEvent.disableClickPropagation(legendOverlayRef.current);
       L.DomEvent.disableScrollPropagation(legendOverlayRef.current);
+    }
+    if (drawOverlayRef.current) {
+      L.DomEvent.disableClickPropagation(drawOverlayRef.current);
+      L.DomEvent.disableScrollPropagation(drawOverlayRef.current);
     }
   });
 
@@ -256,6 +296,82 @@ export function ParcelMap({
   }, [activeFilter, layerOpacity]);
 
   useEffect(() => {
+    const el = containerRef.current;
+    if (!el) return;
+    el.style.cursor = isDrawing ? 'crosshair' : '';
+  }, [isDrawing]);
+
+  function startDrawingPolygon() {
+    setIsDrawing(true);
+    setDraftVertices([]);
+    setControlsOpen(false);
+    setBaseMap('satellite');
+    const map = mapRef.current;
+    if (map) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 15));
+    }
+  }
+
+  function cancelDrawingPolygon() {
+    setIsDrawing(false);
+    setDraftVertices([]);
+  }
+
+  function saveDrawnPolygon() {
+    if (draftVertices.length < 3) return;
+    const areaHa = computePolygonAreaHa(draftVertices);
+    const [cLat, cLon] = computePolygonCentroid(draftVertices);
+    onApplyDrawnPolygon?.(draftVertices, areaHa, cLat, cLon);
+    setIsDrawing(false);
+    setDraftVertices([]);
+  }
+
+  useEffect(() => {
+    if (externalDrawTrigger > 0 && externalDrawTrigger !== lastDrawTriggerRef.current) {
+      lastDrawTriggerRef.current = externalDrawTrigger;
+      startDrawingPolygon();
+    }
+  }, [externalDrawTrigger]);
+
+  useEffect(() => {
+    const group = drawGroupRef.current;
+    if (!group) return;
+    group.clearLayers();
+    if (!isDrawing || draftVertices.length === 0) return;
+
+    if (draftVertices.length >= 3) {
+      L.polygon(draftVertices, {
+        color: '#d97706',
+        weight: 2.5,
+        fillColor: '#fde047',
+        fillOpacity: 0.28,
+        dashArray: '6 4',
+        interactive: false,
+      }).addTo(group);
+    } else if (draftVertices.length === 2) {
+      L.polyline(draftVertices, {
+        color: '#d97706',
+        weight: 2.5,
+        dashArray: '6 4',
+        interactive: false,
+      }).addTo(group);
+    }
+
+    draftVertices.forEach((pt, idx) => {
+      L.circleMarker(pt, {
+        radius: idx === 0 ? 7 : 5,
+        color: '#92400e',
+        weight: 2,
+        fillColor: idx === 0 ? '#f59e0b' : '#fef3c7',
+        fillOpacity: 1,
+        interactive: false,
+      })
+        .bindTooltip(`${idx + 1}`, { permanent: true, direction: 'top', offset: [0, -6] })
+        .addTo(group);
+    });
+  }, [draftVertices, isDrawing]);
+
+  useEffect(() => {
     const group = parcelGroupRef.current;
     if (!group) return;
     group.clearLayers();
@@ -264,32 +380,56 @@ export function ParcelMap({
 
     parcels.forEach((p) => {
       const isFocused = p.id === focusedId;
+      const polyVerts = getEffectivePolygon(p, p.lat, p.lon);
+      const areaHa = p.area_ha ?? computePolygonAreaHa(polyVerts);
+
+      const poly = L.polygon(polyVerts, {
+        color: isFocused ? '#14532d' : '#1b4332',
+        weight: isFocused ? 2.5 : 1.5,
+        fillColor: isFocused ? '#22c55e' : '#86efac',
+        fillOpacity: isFocused ? 0.28 : 0.14,
+        dashArray: p.polygon && p.polygon.length >= 3 ? undefined : '5 4',
+        interactive: !isDrawing,
+      });
+      poly.bindTooltip(`${p.name} · ${areaHa} ha`, {
+        direction: 'top',
+        sticky: true,
+      });
+      poly.on('click', (e: L.LeafletMouseEvent) => {
+        if (isDrawingRef.current) return;
+        L.DomEvent.stopPropagation(e);
+        onSelectParcelRef.current?.(p.id);
+      });
+      poly.addTo(group);
+
       const circle = L.circleMarker([p.lat, p.lon], {
-        radius: isFocused ? 10 : 8,
+        radius: isFocused ? 8 : 6,
         color: isFocused ? '#143326' : '#1b4332',
         weight: isFocused ? 3 : 2,
         fillColor: isFocused ? '#1b4332' : '#dcfce7',
         fillOpacity: isFocused ? 0.95 : 0.9,
+        interactive: !isDrawing,
       });
-      circle.bindTooltip(p.name, {
+      circle.bindTooltip(`${p.name} · ${areaHa} ha`, {
         direction: 'top',
         offset: [0, -8],
       });
       circle.on('click', (e: L.LeafletMouseEvent) => {
+        if (isDrawingRef.current) return;
         L.DomEvent.stopPropagation(e);
         onSelectParcelRef.current?.(p.id);
       });
       circle.addTo(group);
     });
-  }, [parcels, focusedParcel?.id]);
+  }, [parcels, focusedParcel?.id, isDrawing]);
 
   useEffect(() => {
     const map = mapRef.current;
     const marker = pinMarkerRef.current;
     if (!map || !marker) return;
     marker.setLatLng([lat, lon]);
-    if (focusZoom) {
-      map.setView([lat, lon], Math.max(map.getZoom(), 9));
+    if (focusZoom && !isDrawingRef.current) {
+      map.setView([lat, lon], Math.max(map.getZoom(), 14));
     }
   }, [lat, lon, focusZoom]);
 
@@ -533,6 +673,22 @@ export function ParcelMap({
             </span>
           )}
 
+          {onApplyDrawnPolygon && (
+            <Button
+              type="button"
+              size="sm"
+              variant={isDrawing ? 'default' : 'outline'}
+              onClick={() => (isDrawing ? cancelDrawingPolygon() : startDrawingPolygon())}
+            >
+              <PenTool className="h-3.5 w-3.5" />
+              <span>
+                {isDrawing
+                  ? tr(language, 'Dibujando...', 'Drawing...')
+                  : tr(language, 'Dibujar linderos', 'Draw boundary')}
+              </span>
+            </Button>
+          )}
+
           {onStartNewParcelAtCoords && (
             <Button
               type="button"
@@ -547,9 +703,80 @@ export function ParcelMap({
         </div>
       </div>
 
-      {/* Map canvas with in-map floating Layer/Filter selector, Mosaic Date selector & explicit date legend */}
+      {/* Map canvas with in-map floating Layer/Filter selector, Polygon Draw bar & explicit date legend */}
       <div className="map-shell mt-3 flex-1">
         <div id="map" ref={containerRef} />
+
+        {/* In-map top-left drawing bar when tracing parcel boundaries */}
+        {isDrawing && (
+          <div
+            ref={drawOverlayRef}
+            onClick={stopMapPropagation}
+            onMouseDown={stopMapPropagation}
+            onDoubleClick={stopMapPropagation}
+            className="absolute left-12 top-2.5 right-2.5 z-[1001] max-w-[440px] rounded-lg border border-[#fde68a] bg-white/95 p-2.5 shadow-md backdrop-blur-xs"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
+                <PenTool className="h-3.5 w-3.5 text-[#b45309]" />
+                {tr(
+                  language,
+                  'Toca las esquinas de tu parcela en el satélite',
+                  'Click your field corners on satellite view',
+                )}
+              </span>
+              <span className="rounded bg-[#fffbeb] px-2 py-0.5 font-mono text-xs font-semibold text-[#92400e] tabular-nums">
+                {draftVertices.length} pts ·{' '}
+                {draftVertices.length >= 3
+                  ? `${computePolygonAreaHa(draftVertices).toFixed(2)} ha`
+                  : '0.00 ha'}{' '}
+                · {computePolygonPerimeterM(draftVertices)} m
+              </span>
+            </div>
+
+            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+              <button
+                type="button"
+                disabled={draftVertices.length === 0}
+                onClick={() => setDraftVertices((prev) => prev.slice(0, -1))}
+                className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#111813] hover:bg-[#fafaf8] disabled:opacity-40 cursor-pointer"
+              >
+                <RotateCcw className="h-3 w-3" />
+                {tr(language, 'Deshacer', 'Undo')}
+              </button>
+              <button
+                type="button"
+                disabled={draftVertices.length === 0}
+                onClick={() => setDraftVertices([])}
+                className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#111813] hover:bg-[#fafaf8] disabled:opacity-40 cursor-pointer"
+              >
+                <Trash2 className="h-3 w-3" />
+                {tr(language, 'Limpiar', 'Clear')}
+              </button>
+              <button
+                type="button"
+                onClick={cancelDrawingPolygon}
+                className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#475569] hover:bg-[#fee2e2] hover:text-[#991b1b] cursor-pointer"
+              >
+                <X className="h-3 w-3" />
+                {tr(language, 'Cancelar', 'Cancel')}
+              </button>
+              <button
+                type="button"
+                disabled={draftVertices.length < 3}
+                onClick={saveDrawnPolygon}
+                className="ml-auto inline-flex items-center gap-1 rounded bg-[#1b4332] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#143326] disabled:opacity-40 cursor-pointer"
+              >
+                <Check className="h-3.5 w-3.5" />
+                {tr(
+                  language,
+                  `Guardar linderos (${draftVertices.length >= 3 ? computePolygonAreaHa(draftVertices).toFixed(2) : '0.00'} ha)`,
+                  `Save boundary (${draftVertices.length >= 3 ? computePolygonAreaHa(draftVertices).toFixed(2) : '0.00'} ha)`,
+                )}
+              </button>
+            </div>
+          </div>
+        )}
 
         {/* In-map top-right collapsible control box */}
         <div

@@ -1,12 +1,9 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  CloudRain,
-  Flame,
   MapPin,
   Pencil,
   Plus,
   RefreshCw,
-  Sun,
   Trash2,
   X,
 } from 'lucide-react';
@@ -32,16 +29,15 @@ interface ParcelPanelProps {
   selectedLat: number;
   selectedLon: number;
   parcelStatus: string;
-  rainDeltaPct: number;
-  tempDeltaC: number;
   forceOpenNewForm?: number;
+  pendingPolygon?: [number, number][] | null;
+  pendingAreaHa?: number | null;
   onSelectCoords: (lat: number, lon: number, zoom?: boolean) => void;
   onFocusParcel: (id: string) => void;
   onSaveParcel: (payload: Omit<Parcel, 'id'>) => Promise<void>;
   onUpdateParcel: (id: string, payload: Omit<Parcel, 'id'>) => Promise<void>;
   onDeleteParcel: (id: string) => Promise<void>;
   onRunAnalysis: () => void;
-  onChangeScenario: (rain: number, temp: number) => void;
 }
 
 const selectClass =
@@ -66,16 +62,15 @@ export function ParcelPanel({
   selectedLat,
   selectedLon,
   parcelStatus,
-  rainDeltaPct,
-  tempDeltaC,
   forceOpenNewForm = 0,
+  pendingPolygon = null,
+  pendingAreaHa = null,
   onSelectCoords,
   onFocusParcel,
   onSaveParcel,
   onUpdateParcel,
   onDeleteParcel,
   onRunAnalysis,
-  onChangeScenario,
 }: ParcelPanelProps) {
   const [showNewForm, setShowNewForm] = useState(() => parcels.length === 0);
   const [editingParcelId, setEditingParcelId] = useState<string | null>(null);
@@ -116,12 +111,15 @@ export function ParcelPanel({
     if (forceOpenNewForm > 0) {
       setEditingParcelId(null);
       resetFormFields();
+      if (pendingAreaHa && pendingAreaHa > 0) {
+        setAreaHa(String(pendingAreaHa));
+      }
       setShowNewForm(true);
       window.setTimeout(() => {
         nameInputRef.current?.focus();
       }, 60);
     }
-  }, [forceOpenNewForm]);
+  }, [forceOpenNewForm, pendingAreaHa]);
 
   function startNewParcel() {
     if (showNewForm && !editingParcelId) {
@@ -130,6 +128,9 @@ export function ParcelPanel({
     }
     setEditingParcelId(null);
     resetFormFields();
+    if (pendingAreaHa && pendingAreaHa > 0) {
+      setAreaHa(String(pendingAreaHa));
+    }
     setShowNewForm(true);
   }
 
@@ -159,6 +160,9 @@ export function ParcelPanel({
     try {
       const parsedArea = areaHa.trim() ? Number(areaHa) : null;
       const parsedMonth = plantingMonth ? Number(plantingMonth) : null;
+      const existingParcel = editingParcelId
+        ? parcels.find((p) => p.id === editingParcelId)
+        : undefined;
       const payload: Omit<Parcel, 'id'> = {
         name: parcelName.trim(),
         lat: selectedLat,
@@ -170,6 +174,7 @@ export function ParcelPanel({
         has_livestock: hasLivestock,
         area_ha: parsedArea && Number.isFinite(parsedArea) ? parsedArea : null,
         planting_month: parsedMonth && Number.isInteger(parsedMonth) ? parsedMonth : null,
+        polygon: editingParcelId ? (existingParcel?.polygon ?? null) : (pendingPolygon ?? null),
       };
       if (editingParcelId) {
         await onUpdateParcel(editingParcelId, payload);
@@ -185,18 +190,15 @@ export function ParcelPanel({
   }
 
   const formOpen = showNewForm || parcels.length === 0;
-  const scenarioActive = rainDeltaPct !== 0 || tempDeltaC !== 0;
-  const isDrought = rainDeltaPct === -25 && tempDeltaC === 1.5;
 
   return (
     <section
       id="workspaceControls"
-      aria-label={tr(language, 'Selector de parcela y escenarios climáticos', 'Field & climate scenario selector')}
+      aria-label={tr(language, 'Selector de parcela', 'Field selector')}
       className="rounded-xl border border-[#e3e6e1] bg-white p-4 space-y-3"
     >
-      <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        {/* 1. Contrasting Field Selector */}
-        <div className="min-w-0 flex-1 space-y-2">
+      <div className="min-w-0 space-y-2">
+        <div className="flex flex-wrap items-center justify-between gap-2">
           <div className="flex flex-wrap items-center gap-2">
             <span className="text-xs font-bold text-[#111813] sm:text-sm">
               {tr(language, 'Elige tu parcela', 'Select your field')}
@@ -211,176 +213,124 @@ export function ParcelPanel({
             )}
           </div>
 
-          <div className="flex flex-wrap items-center gap-2" aria-label={tr(language, 'Tus campos', 'Your fields')}>
-            {parcels.map((parcel) => {
-              const isFocused = parcel.id === focusedParcelId;
-              const confirmingDelete = confirmDeleteId === parcel.id;
-              const regionBadge = getRegionBadge(parcel, language);
-
-              return (
-                <div
-                  key={parcel.id}
-                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${
-                    isFocused
-                      ? 'border-[#1b4332] bg-[#e6f4ea]'
-                      : 'border-[#e3e6e1] bg-[#fafaf8] hover:bg-[#f0f2ee]'
-                  }`}
-                >
-                  <button
-                    type="button"
-                    onClick={() => {
-                      setConfirmDeleteId(null);
-                      onFocusParcel(parcel.id);
-                    }}
-                    aria-pressed={isFocused}
-                    className="flex flex-wrap items-center gap-1.5 text-left cursor-pointer"
-                  >
-                    <MapPin
-                      className={`h-4 w-4 shrink-0 ${
-                        isFocused ? 'text-[#1b4332]' : 'text-[#475569]'
-                      }`}
-                    />
-                    <span
-                      className={`text-xs sm:text-sm ${
-                        isFocused ? 'font-bold text-[#143326]' : 'font-semibold text-[#111813]'
-                      }`}
-                    >
-                      {parcel.name}
-                    </span>
-                    {regionBadge && (
-                      <span className="rounded bg-white px-1.5 py-0.5 text-xs font-semibold text-[#1b4332]">
-                        {regionBadge}
-                      </span>
-                    )}
-                    <span className="font-mono text-xs text-[#475569]">
-                      · {cropShortLabels[parcel.current_crop]}
-                      {parcel.has_livestock ? tr(language, ' + ganado', ' + livestock') : ''}
-                    </span>
-                  </button>
-
-                  {confirmingDelete ? (
-                    <div className="ml-1 flex items-center gap-1">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          setConfirmDeleteId(null);
-                          void onDeleteParcel(parcel.id);
-                        }}
-                        className="rounded bg-[#b91c1c] px-2 py-0.5 text-xs font-semibold text-white hover:bg-[#991b1b] cursor-pointer"
-                      >
-                        {tr(language, 'Borrar', 'Delete')}
-                      </button>
-                      <button
-                        type="button"
-                        onClick={() => setConfirmDeleteId(null)}
-                        aria-label={tr(language, 'Cancelar borrado', 'Cancel delete')}
-                        className="rounded border border-[#e3e6e1] bg-white p-1 text-[#475569] hover:text-[#111813] cursor-pointer"
-                      >
-                        <X className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  ) : (
-                    <div className="ml-1 flex items-center gap-0.5">
-                      <button
-                        type="button"
-                        title={tr(language, 'Editar campo', 'Edit field')}
-                        aria-label={tr(language, `Editar ${parcel.name}`, `Edit ${parcel.name}`)}
-                        onClick={() => startEditParcel(parcel)}
-                        className="rounded p-1 text-[#475569] hover:bg-white/80 hover:text-[#111813] cursor-pointer"
-                      >
-                        <Pencil className="h-3.5 w-3.5" />
-                      </button>
-                      <button
-                        type="button"
-                        title={tr(language, 'Eliminar campo', 'Delete field')}
-                        aria-label={tr(language, `Eliminar ${parcel.name}`, `Delete ${parcel.name}`)}
-                        onClick={() => setConfirmDeleteId(parcel.id)}
-                        className="rounded p-1 text-[#475569] hover:bg-[#fee2e2] hover:text-[#b91c1c] cursor-pointer"
-                      >
-                        <Trash2 className="h-3.5 w-3.5" />
-                      </button>
-                    </div>
-                  )}
-                </div>
-              );
-            })}
-
-            <button
-              type="button"
-              onClick={startNewParcel}
-              disabled={parcels.length >= 8 && !editingParcelId}
-              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#1b4332]/45 bg-white px-3 py-1.5 text-xs font-semibold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-50 cursor-pointer sm:text-sm"
-            >
-              <Plus className="h-4 w-4" />
-              <span>{tr(language, 'Nuevo campo', 'New field')}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={onRunAnalysis}
+            disabled={!focusedParcelId}
+            className="inline-flex items-center gap-1 rounded-md border border-[#e3e6e1] bg-[#fafaf8] px-2.5 py-1 text-xs font-semibold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-40 cursor-pointer"
+          >
+            <RefreshCw className="h-3.5 w-3.5" />
+            <span>{tr(language, 'Actualizar análisis NASA', 'Refresh NASA analysis')}</span>
+          </button>
         </div>
 
-        {/* 2. Weather scenario buttons */}
-        <div className="shrink-0 space-y-2 border-t border-[#e3e6e1] pt-3 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
-          <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-[#111813] sm:text-sm">
-              {tr(language, 'Escenario climático (Antes vs. Después)', 'Climate scenario (Before vs. After)')}
-            </span>
-            <button
-              type="button"
-              onClick={onRunAnalysis}
-              disabled={!focusedParcelId}
-              className="inline-flex items-center gap-1 text-xs font-semibold text-[#1b4332] hover:underline disabled:opacity-40 cursor-pointer"
-            >
-              <RefreshCw className="h-3.5 w-3.5" />
-              <span>{tr(language, 'Actualizar', 'Refresh')}</span>
-            </button>
-          </div>
+        <div className="flex flex-wrap items-center gap-2" aria-label={tr(language, 'Tus campos', 'Your fields')}>
+          {parcels.map((parcel) => {
+            const isFocused = parcel.id === focusedParcelId;
+            const confirmingDelete = confirmDeleteId === parcel.id;
+            const regionBadge = getRegionBadge(parcel, language);
 
-          <div className="grid grid-cols-3 gap-1.5">
-            <button
-              type="button"
-              onClick={() => onChangeScenario(0, 0)}
-              aria-pressed={!scenarioActive}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors cursor-pointer ${
-                !scenarioActive
-                  ? 'border-[#1b4332] bg-[#e6f4ea] text-[#14532d] font-bold'
-                  : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] font-medium hover:bg-[#f0f2ee]'
-              }`}
-            >
-              <Sun className="h-3.5 w-3.5 text-[#1b4332]" />
-              <span>{tr(language, 'Clima actual', 'Current')}</span>
-            </button>
+            return (
+              <div
+                key={parcel.id}
+                className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${
+                  isFocused
+                    ? 'border-[#1b4332] bg-[#e6f4ea]'
+                    : 'border-[#e3e6e1] bg-[#fafaf8] hover:bg-[#f0f2ee]'
+                }`}
+              >
+                <button
+                  type="button"
+                  onClick={() => {
+                    setConfirmDeleteId(null);
+                    onFocusParcel(parcel.id);
+                  }}
+                  aria-pressed={isFocused}
+                  className="flex flex-wrap items-center gap-1.5 text-left cursor-pointer"
+                >
+                  <MapPin
+                    className={`h-4 w-4 shrink-0 ${
+                      isFocused ? 'text-[#1b4332]' : 'text-[#475569]'
+                    }`}
+                  />
+                  <span
+                    className={`text-xs sm:text-sm ${
+                      isFocused ? 'font-bold text-[#143326]' : 'font-semibold text-[#111813]'
+                    }`}
+                  >
+                    {parcel.name}
+                  </span>
+                  {regionBadge && (
+                    <span className="rounded bg-white px-1.5 py-0.5 text-xs font-semibold text-[#1b4332]">
+                      {regionBadge}
+                    </span>
+                  )}
+                  <span className="font-mono text-xs text-[#475569]">
+                    · {cropShortLabels[parcel.current_crop]}
+                    {parcel.area_ha ? ` · ${parcel.area_ha} ha` : ''}
+                    {parcel.has_livestock ? tr(language, ' + ganado', ' + livestock') : ''}
+                  </span>
+                </button>
 
-            <button
-              type="button"
-              onClick={() => onChangeScenario(-25, 1.5)}
-              aria-pressed={isDrought}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors cursor-pointer ${
-                isDrought
-                  ? 'border-[#b45309] bg-[#fef3c7] text-[#92400e] font-bold'
-                  : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] font-medium hover:bg-[#fef3c7]/60'
-              }`}
-            >
-              <Flame className="h-3.5 w-3.5 text-[#b45309]" />
-              <span>{tr(language, 'Sequía −25%', 'Drought −25%')}</span>
-            </button>
+                {confirmingDelete ? (
+                  <div className="ml-1 flex items-center gap-1">
+                    <button
+                      type="button"
+                      onClick={() => {
+                        setConfirmDeleteId(null);
+                        void onDeleteParcel(parcel.id);
+                      }}
+                      className="rounded bg-[#b91c1c] px-2 py-0.5 text-xs font-semibold text-white hover:bg-[#991b1b] cursor-pointer"
+                    >
+                      {tr(language, 'Borrar', 'Delete')}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setConfirmDeleteId(null)}
+                      aria-label={tr(language, 'Cancelar borrado', 'Cancel delete')}
+                      className="rounded border border-[#e3e6e1] bg-white p-1 text-[#475569] hover:text-[#111813] cursor-pointer"
+                    >
+                      <X className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                ) : (
+                  <div className="ml-1 flex items-center gap-0.5">
+                    <button
+                      type="button"
+                      title={tr(language, 'Editar campo', 'Edit field')}
+                      aria-label={tr(language, `Editar ${parcel.name}`, `Edit ${parcel.name}`)}
+                      onClick={() => startEditParcel(parcel)}
+                      className="rounded p-1 text-[#475569] hover:bg-white/80 hover:text-[#111813] cursor-pointer"
+                    >
+                      <Pencil className="h-3.5 w-3.5" />
+                    </button>
+                    <button
+                      type="button"
+                      title={tr(language, 'Eliminar campo', 'Delete field')}
+                      aria-label={tr(language, `Eliminar ${parcel.name}`, `Delete ${parcel.name}`)}
+                      onClick={() => setConfirmDeleteId(parcel.id)}
+                      className="rounded p-1 text-[#475569] hover:bg-[#fee2e2] hover:text-[#b91c1c] cursor-pointer"
+                    >
+                      <Trash2 className="h-3.5 w-3.5" />
+                    </button>
+                  </div>
+                )}
+              </div>
+            );
+          })}
 
-            <button
-              type="button"
-              onClick={() => onChangeScenario(20, 0.5)}
-              aria-pressed={rainDeltaPct === 20 && tempDeltaC === 0.5}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors cursor-pointer ${
-                rainDeltaPct === 20 && tempDeltaC === 0.5
-                  ? 'border-[#1d4ed8] bg-[#dbeafe] text-[#1e3a8a] font-bold'
-                  : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] font-medium hover:bg-[#dbeafe]/60'
-              }`}
-            >
-              <CloudRain className="h-3.5 w-3.5 text-[#1d4ed8]" />
-              <span>{tr(language, 'Lluvioso +20%', 'Rainy +20%')}</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            onClick={startNewParcel}
+            disabled={parcels.length >= 8 && !editingParcelId}
+            className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#1b4332]/45 bg-white px-3 py-1.5 text-xs font-semibold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-50 cursor-pointer sm:text-sm"
+          >
+            <Plus className="h-4 w-4" />
+            <span>{tr(language, 'Nuevo campo', 'New field')}</span>
+          </button>
         </div>
       </div>
 
-      {/* Persistent Before vs After Scenario Strip */}
       {/* Expandable drawer for creating / editing a field */}
       {formOpen && (
         <form onSubmit={handleSave} className="mt-2 space-y-3 border-t border-[#e3e6e1] pt-3.5">

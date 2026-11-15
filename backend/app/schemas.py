@@ -200,6 +200,10 @@ class ParcelCreateRequest(RotationCompareRequest):
     name: str = Field(..., min_length=1, max_length=80)
     area_ha: float | None = Field(default=None, ge=0.01, le=100000.0)
     planting_month: int | None = Field(default=None, ge=1, le=12)
+    polygon: list[list[float]] | None = Field(
+        default=None,
+        description="Optional polygon vertices [[lat, lon], ...]",
+    )
 
 
 class ScenarioRequest(BaseModel):

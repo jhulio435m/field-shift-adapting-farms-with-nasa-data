@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import hashlib
 import hmac
+import json
 import os
 from pathlib import Path
 import re
@@ -54,7 +55,8 @@ def connect():
             priority TEXT NOT NULL, soil_texture TEXT NOT NULL,
             has_livestock INTEGER NOT NULL DEFAULT 0,
             area_ha REAL,
-            planting_month INTEGER
+            planting_month INTEGER,
+            polygon_json TEXT
         );
         CREATE INDEX IF NOT EXISTS parcels_owner ON parcels(farmer_id);
     """)
@@ -75,6 +77,8 @@ def connect():
             db.execute("ALTER TABLE parcels ADD COLUMN area_ha REAL")
         if "planting_month" not in parcel_cols:
             db.execute("ALTER TABLE parcels ADD COLUMN planting_month INTEGER")
+        if "polygon_json" not in parcel_cols:
+            db.execute("ALTER TABLE parcels ADD COLUMN polygon_json TEXT")
         db.execute("PRAGMA foreign_keys=ON")
         yield db
         db.commit()
@@ -218,16 +222,50 @@ def require_csrf(row: sqlite3.Row, value: str | None) -> None:
         raise HTTPException(status_code=403, detail="Protección de sesión inválida")
 
 
+def _normalize_polygon(poly: list[list[float]] | None) -> list[list[float]] | None:
+    if not poly or len(poly) < 3:
+        return None
+    cleaned: list[list[float]] = []
+    for pt in poly[:40]:
+        if not isinstance(pt, (list, tuple)) or len(pt) < 2:
+            continue
+        try:
+            plat = round(float(pt[0]), 6)
+            plon = round(float(pt[1]), 6)
+        except (TypeError, ValueError):
+            continue
+        if -90.0 <= plat <= 90.0 and -180.0 <= plon <= 180.0:
+            cleaned.append([plat, plon])
+    return cleaned if len(cleaned) >= 3 else None
+
+
+def _serialize_polygon(poly: list[list[float]] | None) -> str | None:
+    normalized = _normalize_polygon(poly)
+    return json.dumps(normalized) if normalized is not None else None
+
+
+def _row_to_parcel(row: sqlite3.Row) -> dict:
+    item = dict(row)
+    raw_poly = item.pop("polygon_json", None)
+    try:
+        item["polygon"] = json.loads(raw_poly) if raw_poly else None
+    except (TypeError, ValueError):
+        item["polygon"] = None
+    return item
+
+
 def list_parcels(farmer_id: str) -> list[dict]:
     with connect() as db:
-        return [dict(row) for row in db.execute(
-            "SELECT id,name,lat,lon,current_crop,irrigation,priority,soil_texture,has_livestock,area_ha,planting_month "
+        return [_row_to_parcel(row) for row in db.execute(
+            "SELECT id,name,lat,lon,current_crop,irrigation,priority,soil_texture,has_livestock,area_ha,planting_month,polygon_json "
             "FROM parcels WHERE farmer_id=? ORDER BY rowid", (farmer_id,))]
 
 
 def add_parcel(farmer_id: str, data: dict) -> dict:
     if not 1 <= len(data["name"].strip()) <= 80:
         raise HTTPException(status_code=422, detail="Ponle un nombre a la parcela")
+    normalized_poly = _normalize_polygon(data.get("polygon"))
+    poly_json = json.dumps(normalized_poly) if normalized_poly is not None else None
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         count = db.execute("SELECT COUNT(*) FROM parcels WHERE farmer_id=?", (farmer_id,)).fetchone()[0]
@@ -235,12 +273,12 @@ def add_parcel(farmer_id: str, data: dict) -> dict:
             raise HTTPException(status_code=422, detail="Máximo 8 parcelas por cuenta")
         parcel_id = str(uuid4())
         db.execute("""INSERT INTO parcels(id,farmer_id,name,lat,lon,current_crop,irrigation,
-                      priority,soil_texture,has_livestock,area_ha,planting_month) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                      priority,soil_texture,has_livestock,area_ha,planting_month,polygon_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                    (parcel_id, farmer_id, data["name"].strip(), data["lat"], data["lon"],
                     data["current_crop"], data["irrigation"], data["priority"],
                     data["soil_texture"], int(data["has_livestock"]),
-                    data.get("area_ha"), data.get("planting_month")))
-    return {"id": parcel_id, **{**data, "name": data["name"].strip()}}
+                    data.get("area_ha"), data.get("planting_month"), poly_json))
+    return {"id": parcel_id, **{**data, "name": data["name"].strip(), "polygon": normalized_poly}}
 
 
 def bot_config(row: sqlite3.Row) -> dict:
@@ -269,12 +307,14 @@ def get_parcel(farmer_id: str, parcel_id: str) -> dict:
         row = db.execute("SELECT * FROM parcels WHERE farmer_id=? AND id=?", (farmer_id, parcel_id)).fetchone()
     if row is None:
         raise HTTPException(status_code=404, detail="Parcela no encontrada")
-    return dict(row)
+    return _row_to_parcel(row)
 
 
 def update_parcel(farmer_id: str, parcel_id: str, data: dict) -> dict:
     if not 1 <= len(data["name"].strip()) <= 80:
         raise HTTPException(status_code=422, detail="Ponle un nombre a la parcela")
+    normalized_poly = _normalize_polygon(data.get("polygon"))
+    poly_json = json.dumps(normalized_poly) if normalized_poly is not None else None
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         row = db.execute(
@@ -286,7 +326,7 @@ def update_parcel(farmer_id: str, parcel_id: str, data: dict) -> dict:
         db.execute(
             """UPDATE parcels
                SET name=?, lat=?, lon=?, current_crop=?, irrigation=?, priority=?,
-                   soil_texture=?, has_livestock=?, area_ha=?, planting_month=?
+                   soil_texture=?, has_livestock=?, area_ha=?, planting_month=?, polygon_json=?
                WHERE id=? AND farmer_id=?""",
             (
                 data["name"].strip(),
@@ -299,11 +339,12 @@ def update_parcel(farmer_id: str, parcel_id: str, data: dict) -> dict:
                 int(data["has_livestock"]),
                 data.get("area_ha"),
                 data.get("planting_month"),
+                poly_json,
                 parcel_id,
                 farmer_id,
             ),
         )
-    return {"id": parcel_id, **{**data, "name": data["name"].strip()}}
+    return {"id": parcel_id, **{**data, "name": data["name"].strip(), "polygon": normalized_poly}}
 
 
 def delete_parcel(farmer_id: str, parcel_id: str) -> None:
@@ -404,6 +445,18 @@ def start_demo(data: dict) -> tuple[str, str]:
         if data.get("seed_parcels", True):
             count = db.execute("SELECT COUNT(*) FROM parcels WHERE farmer_id=?", (farmer_id,)).fetchone()[0]
             if count == 0:
+                mantaro_poly = _serialize_polygon([
+                    [-12.0644, -75.2057],
+                    [-12.0643, -75.2041],
+                    [-12.0656, -75.2040],
+                    [-12.0657, -75.2056],
+                ])
+                piura_poly = _serialize_polygon([
+                    [-5.1937, -80.6338],
+                    [-5.1936, -80.6318],
+                    [-5.1953, -80.6317],
+                    [-5.1954, -80.6337],
+                ])
                 demo_parcels = [
                     (
                         str(uuid4()),
@@ -418,6 +471,7 @@ def start_demo(data: dict) -> tuple[str, str]:
                         1,
                         2.5,
                         10,
+                        mantaro_poly,
                     ),
                     (
                         str(uuid4()),
@@ -432,13 +486,14 @@ def start_demo(data: dict) -> tuple[str, str]:
                         0,
                         4.0,
                         1,
+                        piura_poly,
                     ),
                 ]
                 db.executemany(
                     """INSERT INTO parcels(
                            id, farmer_id, name, lat, lon, current_crop, irrigation,
-                           priority, soil_texture, has_livestock, area_ha, planting_month
-                       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?)""",
+                           priority, soil_texture, has_livestock, area_ha, planting_month, polygon_json
+                       ) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
                     demo_parcels,
                 )
 

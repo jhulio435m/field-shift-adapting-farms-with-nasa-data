@@ -21,6 +21,7 @@ import {
 import { DiagnosisExplorer, DiagnosisSummaryCard } from './components/DiagnosisPanel';
 import { KusiSimulator } from './components/KusiSimulator';
 import { OnboardingForm } from './components/OnboardingForm';
+import { Parcel3DView } from './components/Parcel3DView';
 import { ParcelMap } from './components/ParcelMap';
 import { ParcelPanel } from './components/ParcelPanel';
 import { Button } from './components/ui/button';
@@ -59,6 +60,9 @@ export default function App() {
   const [focusedParcelId, setFocusedParcelId] = useState<string | null>(null);
   const [parcelStatus, setParcelStatus] = useState('');
   const [newFormTrigger, setNewFormTrigger] = useState(0);
+  const [drawTrigger, setDrawTrigger] = useState(0);
+  const [pendingPolygon, setPendingPolygon] = useState<[number, number][] | null>(null);
+  const [pendingAreaHa, setPendingAreaHa] = useState<number | null>(null);
 
   const [rainDeltaPct, setRainDeltaPct] = useState(0);
   const [tempDeltaC, setTempDeltaC] = useState(0);
@@ -286,11 +290,65 @@ export default function App() {
       setFocusedParcelId(created.id);
       setSelectedLat(created.lat);
       setSelectedLon(created.lon);
+      setPendingPolygon(null);
+      setPendingAreaHa(null);
       setFocusZoom(true);
       setParcelStatus(`${tr(language, 'Guardado:', 'Saved:')} ${created.name}`);
     } catch (error) {
       setParcelStatus(error instanceof Error ? error.message : String(error));
     }
+  }
+
+  async function handleApplyDrawnPolygon(
+    polygon: [number, number][],
+    areaHa: number,
+    centroidLat: number,
+    centroidLon: number,
+  ) {
+    if (!profile) return;
+    const focused = profile.parcels.find((p) => p.id === focusedParcelId) ?? null;
+    const isNearFocused =
+      focused !== null &&
+      Math.abs(focused.lat - centroidLat) < 0.05 &&
+      Math.abs(focused.lon - centroidLon) < 0.05;
+
+    if (focused && isNearFocused) {
+      await handleUpdateParcel(focused.id, {
+        name: focused.name,
+        lat: centroidLat,
+        lon: centroidLon,
+        current_crop: focused.current_crop,
+        irrigation: focused.irrigation,
+        soil_texture: focused.soil_texture,
+        priority: focused.priority,
+        has_livestock: focused.has_livestock,
+        area_ha: areaHa,
+        planting_month: focused.planting_month ?? null,
+        polygon,
+      });
+      setParcelStatus(
+        tr(
+          language,
+          `Linderos guardados: ${focused.name} (${areaHa.toFixed(2)} ha)`,
+          `Boundaries saved: ${focused.name} (${areaHa.toFixed(2)} ha)`,
+        ),
+      );
+      return;
+    }
+
+    setPendingPolygon(polygon);
+    setPendingAreaHa(areaHa);
+    setSelectedLat(centroidLat);
+    setSelectedLon(centroidLon);
+    setFocusZoom(true);
+    setNewFormTrigger((n) => n + 1);
+    setParcelStatus(
+      tr(
+        language,
+        `Polígono trazado (${areaHa.toFixed(2)} ha). Completa el nombre y guarda el campo.`,
+        `Boundary traced (${areaHa.toFixed(2)} ha). Name and save the field below.`,
+      ),
+    );
   }
 
   async function handleUpdateParcel(id: string, payload: Omit<Parcel, 'id'>) {
@@ -632,7 +690,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Top Field Selector + Scenario Stress Buttons */}
+            {/* Top Field Selector */}
             <ParcelPanel
               language={language}
               profileName={profile.name}
@@ -642,9 +700,9 @@ export default function App() {
               selectedLat={selectedLat}
               selectedLon={selectedLon}
               parcelStatus={parcelStatus}
-              rainDeltaPct={rainDeltaPct}
-              tempDeltaC={tempDeltaC}
               forceOpenNewForm={newFormTrigger}
+              pendingPolygon={pendingPolygon}
+              pendingAreaHa={pendingAreaHa}
               onSelectCoords={handleSelectCoords}
               onFocusParcel={handleFocusParcel}
               onSaveParcel={handleSaveParcel}
@@ -653,7 +711,6 @@ export default function App() {
               onRunAnalysis={() =>
                 void runAnalysis(focusedParcelId, rainDeltaPct, tempDeltaC, language, true)
               }
-              onChangeScenario={handleChangeScenario}
             />
 
             {/* Main Grid: Map FIRST (left) + Compact Diagnosis Summary (right) | Accessible Voice Simulator */}
@@ -668,9 +725,13 @@ export default function App() {
                     parcels={profile.parcels}
                     focusedParcel={focusedParcel}
                     diagnosis={lastData?.diagnosis ?? null}
+                    externalDrawTrigger={drawTrigger}
                     onSelectCoords={(lat, lon) => handleSelectCoords(lat, lon, false)}
                     onSelectParcel={handleFocusParcel}
                     onStartNewParcelAtCoords={() => setNewFormTrigger((n) => n + 1)}
+                    onApplyDrawnPolygon={(poly, area, cLat, cLon) =>
+                      void handleApplyDrawnPolygon(poly, area, cLat, cLon)
+                    }
                   />
 
                   <DiagnosisSummaryCard
@@ -683,6 +744,23 @@ export default function App() {
                     strategies={lastData?.strategies ?? []}
                   />
                 </div>
+
+                <Parcel3DView
+                  language={language}
+                  viewMode={viewMode}
+                  parcel={focusedParcel}
+                  lat={selectedLat}
+                  lon={selectedLon}
+                  diagnosis={lastData?.diagnosis ?? null}
+                  strategies={lastData?.strategies ?? []}
+                  rainDeltaPct={rainDeltaPct}
+                  tempDeltaC={tempDeltaC}
+                  onChangeScenario={handleChangeScenario}
+                  onRequestDrawPolygon={() => {
+                    setDrawTrigger((n) => n + 1);
+                    document.getElementById('map')?.scrollIntoView({ behavior: 'smooth', block: 'center' });
+                  }}
+                />
 
                 <DiagnosisExplorer
                   language={language}

@@ -100,6 +100,7 @@ def test_telegram_only_demo_mode_and_parcel_metadata(tmp_path, monkeypatch) -> N
     assert me['bot_config']['telegram_handle'] == '@agro_mantaro'
     assert me['bot_config']['bot_audience'] == 'agronomist'
 
+    saved_poly = [[-12.0644, -75.2057], [-12.0643, -75.2041], [-12.0656, -75.204], [-12.0657, -75.2056]]
     saved = client.post('/v1/parcels', json={
         'name': 'Lote con hectareas',
         'lat': -12.065,
@@ -111,10 +112,15 @@ def test_telegram_only_demo_mode_and_parcel_metadata(tmp_path, monkeypatch) -> N
         'has_livestock': False,
         'area_ha': 2.5,
         'planting_month': 10,
+        'polygon': saved_poly,
     }, headers={'X-CSRF-Token': me['csrf']})
     assert saved.status_code == 200
     assert saved.json()['area_ha'] == 2.5
     assert saved.json()['planting_month'] == 10
+    assert saved.json()['polygon'] == saved_poly
+
+    me_after = client.get('/v1/me').json()
+    assert me_after['parcels'][0]['polygon'] == saved_poly
 
 
 def test_demo_onboarding_seeds_parcels_and_supports_crud_and_logout(tmp_path, monkeypatch) -> None:
@@ -131,8 +137,10 @@ def test_demo_onboarding_seeds_parcels_and_supports_crud_and_logout(tmp_path, mo
     assert me_resp.status_code == 200
     parcels = me_resp.json()['parcels']
     assert len(parcels) == 2
+    assert parcels[0]['polygon'] is not None and len(parcels[0]['polygon']) == 4
 
     target_id = parcels[0]['id']
+    updated_poly = [[-12.069, -75.211], [-12.069, -75.209], [-12.071, -75.209], [-12.071, -75.211]]
     update_resp = client.put(
         f'/v1/parcels/{target_id}',
         json={
@@ -146,12 +154,14 @@ def test_demo_onboarding_seeds_parcels_and_supports_crud_and_logout(tmp_path, mo
             'has_livestock': False,
             'area_ha': 3.2,
             'planting_month': 9,
+            'polygon': updated_poly,
         },
         headers={'X-CSRF-Token': csrf},
     )
     assert update_resp.status_code == 200
     assert update_resp.json()['name'] == 'Lote Mantaro Actualizado'
     assert update_resp.json()['current_crop'] == 'maize_continuous'
+    assert update_resp.json()['polygon'] == updated_poly
 
     delete_resp = client.delete(f'/v1/parcels/{target_id}', headers={'X-CSRF-Token': csrf})
     assert delete_resp.status_code == 200
