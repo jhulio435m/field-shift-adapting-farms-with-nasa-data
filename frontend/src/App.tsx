@@ -33,6 +33,7 @@ import type {
   AlertFrequencyType,
   BotChannelType,
   BotConfig,
+  CropKey,
   FarmerProfile,
   Language,
   Parcel,
@@ -299,25 +300,24 @@ export default function App() {
     }
   }
 
-  async function handleApplyDrawnPolygon(
+  async function handleSaveDrawnParcel(
     polygon: [number, number][],
     areaHa: number,
     centroidLat: number,
     centroidLon: number,
+    mode: 'create' | 'update',
+    customName?: string,
+    crop?: CropKey,
   ) {
     if (!profile) return;
     const focused = profile.parcels.find((p) => p.id === focusedParcelId) ?? null;
-    const isNearFocused =
-      focused !== null &&
-      Math.abs(focused.lat - centroidLat) < 0.05 &&
-      Math.abs(focused.lon - centroidLon) < 0.05;
 
-    if (focused && isNearFocused) {
+    if (mode === 'update' && focused) {
       await handleUpdateParcel(focused.id, {
         name: focused.name,
         lat: centroidLat,
         lon: centroidLon,
-        current_crop: focused.current_crop,
+        current_crop: crop ?? focused.current_crop,
         irrigation: focused.irrigation,
         soil_texture: focused.soil_texture,
         priority: focused.priority,
@@ -329,26 +329,31 @@ export default function App() {
       setParcelStatus(
         tr(
           language,
-          `Linderos guardados: ${focused.name} (${areaHa.toFixed(2)} ha)`,
-          `Boundaries saved: ${focused.name} (${areaHa.toFixed(2)} ha)`,
+          `Linderos actualizados: ${focused.name} (${areaHa.toFixed(2)} ha)`,
+          `Boundaries updated: ${focused.name} (${areaHa.toFixed(2)} ha)`,
         ),
       );
       return;
     }
 
-    setPendingPolygon(polygon);
-    setPendingAreaHa(areaHa);
-    setSelectedLat(centroidLat);
-    setSelectedLon(centroidLon);
-    setFocusZoom(true);
-    setNewFormTrigger((n) => n + 1);
-    setParcelStatus(
-      tr(
-        language,
-        `Polígono trazado (${areaHa.toFixed(2)} ha). Completa el nombre y guarda el campo.`,
-        `Boundary traced (${areaHa.toFixed(2)} ha). Name and save the field below.`,
-      ),
+    const fallbackName = tr(
+      language,
+      `Parcela ${profile.parcels.length + 1}`,
+      `Field ${profile.parcels.length + 1}`,
     );
+    await handleSaveParcel({
+      name: customName?.trim() || fallbackName,
+      lat: centroidLat,
+      lon: centroidLon,
+      current_crop: crop ?? focused?.current_crop ?? 'potato_continuous',
+      irrigation: focused?.irrigation ?? 'rainfed',
+      soil_texture: focused?.soil_texture ?? 'loam',
+      priority: focused?.priority ?? 'soil_health',
+      has_livestock: focused?.has_livestock ?? false,
+      area_ha: areaHa,
+      planting_month: focused?.planting_month ?? 10,
+      polygon,
+    });
   }
 
   async function handleUpdateParcel(id: string, payload: Omit<Parcel, 'id'>) {
@@ -725,12 +730,13 @@ export default function App() {
                     parcels={profile.parcels}
                     focusedParcel={focusedParcel}
                     diagnosis={lastData?.diagnosis ?? null}
+                    pendingPolygon={pendingPolygon}
                     externalDrawTrigger={drawTrigger}
                     onSelectCoords={(lat, lon) => handleSelectCoords(lat, lon, false)}
                     onSelectParcel={handleFocusParcel}
                     onStartNewParcelAtCoords={() => setNewFormTrigger((n) => n + 1)}
-                    onApplyDrawnPolygon={(poly, area, cLat, cLon) =>
-                      void handleApplyDrawnPolygon(poly, area, cLat, cLon)
+                    onSaveDrawnParcel={(poly, area, cLat, cLon, mode, name, crop) =>
+                      handleSaveDrawnParcel(poly, area, cLat, cLon, mode, name, crop)
                     }
                   />
 

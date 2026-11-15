@@ -204,7 +204,7 @@ export function ParcelPanel({
               {tr(language, 'Elige tu parcela', 'Select your field')}
             </span>
             <span className="font-mono text-xs text-[#475569]">
-              {profileName} · •••• {phoneLast4} ({parcels.length}/8)
+              {profileName} · •••• {phoneLast4} ({parcels.length}/20)
             </span>
             {parcelStatus && (
               <span className="rounded bg-[#fafaf8] px-2 py-0.5 text-xs font-medium text-[#1b4332]" role="status">
@@ -322,7 +322,7 @@ export function ParcelPanel({
           <button
             type="button"
             onClick={startNewParcel}
-            disabled={parcels.length >= 8 && !editingParcelId}
+            disabled={parcels.length >= 20 && !editingParcelId}
             className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#1b4332]/45 bg-white px-3 py-1.5 text-xs font-semibold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-50 cursor-pointer sm:text-sm"
           >
             <Plus className="h-4 w-4" />

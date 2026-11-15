@@ -12,7 +12,7 @@ const ENGLISH_ERRORS: Record<string, string> = {
   'Código vencido o ya utilizado': 'Code expired or already used.',
   'Parcela no encontrada': 'Field not found.',
   'Selecciona al menos una parcela': 'Select at least one field.',
-  'Máximo 8 parcelas por cuenta': 'Maximum of 8 fields per account.',
+  'Máximo 20 parcelas por cuenta': 'Maximum of 20 fields per account.',
   'Ponle un nombre a la parcela': 'Give the field a name.',
   'NASA POWER no disponible; no se generan recomendaciones con datos sinteticos':
     'NASA POWER is unavailable; no recommendation is generated from synthetic data.',

@@ -26,7 +26,7 @@ import {
   computePolygonPerimeterM,
   getEffectivePolygon,
 } from '../lib/parcelGeometry';
-import type { Language, Parcel, ParcelDiagnosis } from '../types';
+import type { CropKey, Language, Parcel, ParcelDiagnosis } from '../types';
 import { Button } from './ui/button';
 
 import markerIcon2x from 'leaflet/dist/images/marker-icon-2x.png';
@@ -51,16 +51,20 @@ interface ParcelMapProps {
   parcels?: Parcel[];
   focusedParcel?: Parcel | null;
   diagnosis?: ParcelDiagnosis | null;
+  pendingPolygon?: [number, number][] | null;
   externalDrawTrigger?: number;
   onSelectCoords: (lat: number, lon: number) => void;
   onSelectParcel?: (id: string) => void;
   onStartNewParcelAtCoords?: () => void;
-  onApplyDrawnPolygon?: (
+  onSaveDrawnParcel?: (
     polygon: [number, number][],
     areaHa: number,
     centroidLat: number,
     centroidLon: number,
-  ) => void;
+    mode: 'create' | 'update',
+    customName?: string,
+    crop?: CropKey,
+  ) => Promise<void> | void;
 }
 
 interface FilterOptionConfig {
@@ -100,11 +104,12 @@ export function ParcelMap({
   parcels = [],
   focusedParcel = null,
   diagnosis = null,
+  pendingPolygon = null,
   externalDrawTrigger = 0,
   onSelectCoords,
   onSelectParcel,
   onStartNewParcelAtCoords,
-  onApplyDrawnPolygon,
+  onSaveDrawnParcel,
 }: ParcelMapProps) {
   const [baseMap, setBaseMap] = useState<BaseMapKey>('osm');
   const [activeFilter, setActiveFilter] = useState<NasaFilterKey>('none');
@@ -114,6 +119,9 @@ export function ParcelMap({
   const [controlsOpen, setControlsOpen] = useState<boolean>(false);
   const [isDrawing, setIsDrawing] = useState<boolean>(false);
   const [draftVertices, setDraftVertices] = useState<[number, number][]>([]);
+  const [drawName, setDrawName] = useState<string>('');
+  const [drawCrop, setDrawCrop] = useState<CropKey>('potato_continuous');
+  const [savingPolygon, setSavingPolygon] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controlsOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -304,6 +312,8 @@ export function ParcelMap({
   function startDrawingPolygon() {
     setIsDrawing(true);
     setDraftVertices([]);
+    setDrawName(tr(language, `Parcela ${parcels.length + 1}`, `Field ${parcels.length + 1}`));
+    setDrawCrop(focusedParcel?.current_crop ?? 'potato_continuous');
     setControlsOpen(false);
     setBaseMap('satellite');
     const map = mapRef.current;
@@ -317,13 +327,26 @@ export function ParcelMap({
     setDraftVertices([]);
   }
 
-  function saveDrawnPolygon() {
-    if (draftVertices.length < 3) return;
-    const areaHa = computePolygonAreaHa(draftVertices);
-    const [cLat, cLon] = computePolygonCentroid(draftVertices);
-    onApplyDrawnPolygon?.(draftVertices, areaHa, cLat, cLon);
-    setIsDrawing(false);
-    setDraftVertices([]);
+  async function handleSaveDrawn(mode: 'create' | 'update') {
+    if (draftVertices.length < 3 || savingPolygon) return;
+    setSavingPolygon(true);
+    try {
+      const areaHa = computePolygonAreaHa(draftVertices);
+      const [cLat, cLon] = computePolygonCentroid(draftVertices);
+      await onSaveDrawnParcel?.(
+        draftVertices,
+        areaHa,
+        cLat,
+        cLon,
+        mode,
+        drawName.trim() || undefined,
+        drawCrop,
+      );
+      setIsDrawing(false);
+      setDraftVertices([]);
+    } finally {
+      setSavingPolygon(false);
+    }
   }
 
   useEffect(() => {
@@ -421,7 +444,18 @@ export function ParcelMap({
       });
       circle.addTo(group);
     });
-  }, [parcels, focusedParcel?.id, isDrawing]);
+
+    if (pendingPolygon && pendingPolygon.length >= 3) {
+      L.polygon(pendingPolygon, {
+        color: '#d97706',
+        weight: 2.5,
+        fillColor: '#fde047',
+        fillOpacity: 0.24,
+        dashArray: '5 4',
+        interactive: false,
+      }).addTo(group);
+    }
+  }, [parcels, focusedParcel?.id, isDrawing, pendingPolygon]);
 
   useEffect(() => {
     const map = mapRef.current;
@@ -673,7 +707,7 @@ export function ParcelMap({
             </span>
           )}
 
-          {onApplyDrawnPolygon && (
+          {onSaveDrawnParcel && (
             <Button
               type="button"
               size="sm"
@@ -714,7 +748,7 @@ export function ParcelMap({
             onClick={stopMapPropagation}
             onMouseDown={stopMapPropagation}
             onDoubleClick={stopMapPropagation}
-            className="absolute left-12 top-2.5 right-2.5 z-[1001] max-w-[440px] rounded-lg border border-[#fde68a] bg-white/95 p-2.5 shadow-md backdrop-blur-xs"
+            className="absolute left-12 top-2.5 right-2.5 z-[1001] max-w-[540px] rounded-lg border border-[#fde68a] bg-white/95 p-2.5 shadow-md backdrop-blur-xs space-y-2"
           >
             <div className="flex flex-wrap items-center justify-between gap-2">
               <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
@@ -734,10 +768,35 @@ export function ParcelMap({
               </span>
             </div>
 
-            <div className="mt-2 flex flex-wrap items-center gap-1.5">
+            <div className="grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+              <input
+                id="draw-parcel-name"
+                type="text"
+                maxLength={80}
+                value={drawName}
+                onChange={(e) => setDrawName(e.target.value)}
+                placeholder={tr(language, 'Nombre de la parcela', 'Field name')}
+                className="h-8 rounded-md border border-[#d6dad3] bg-white px-2.5 text-xs font-medium text-[#111813] focus:border-[#1b4332] focus:outline-none focus:ring-2 focus:ring-[#1b4332]/15"
+              />
+              <select
+                id="draw-parcel-crop"
+                value={drawCrop}
+                onChange={(e) => setDrawCrop(e.target.value as CropKey)}
+                aria-label={tr(language, 'Cultivo inicial', 'Current crop')}
+                className={selectClassName}
+              >
+                <option value="potato_continuous">{tr(language, 'Cultivo: Papa', 'Crop: Potato')}</option>
+                <option value="maize_continuous">{tr(language, 'Cultivo: Maíz', 'Crop: Maize')}</option>
+                <option value="rice_continuous">{tr(language, 'Cultivo: Arroz', 'Crop: Rice')}</option>
+                <option value="wheat_continuous">{tr(language, 'Cultivo: Trigo / cereal', 'Crop: Wheat')}</option>
+                <option value="mixed_vegetables">{tr(language, 'Cultivo: Hortalizas', 'Crop: Vegetables')}</option>
+              </select>
+            </div>
+
+            <div className="flex flex-wrap items-center gap-1.5">
               <button
                 type="button"
-                disabled={draftVertices.length === 0}
+                disabled={draftVertices.length === 0 || savingPolygon}
                 onClick={() => setDraftVertices((prev) => prev.slice(0, -1))}
                 className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#111813] hover:bg-[#fafaf8] disabled:opacity-40 cursor-pointer"
               >
@@ -746,7 +805,7 @@ export function ParcelMap({
               </button>
               <button
                 type="button"
-                disabled={draftVertices.length === 0}
+                disabled={draftVertices.length === 0 || savingPolygon}
                 onClick={() => setDraftVertices([])}
                 className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#111813] hover:bg-[#fafaf8] disabled:opacity-40 cursor-pointer"
               >
@@ -755,25 +814,45 @@ export function ParcelMap({
               </button>
               <button
                 type="button"
+                disabled={savingPolygon}
                 onClick={cancelDrawingPolygon}
-                className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#475569] hover:bg-[#fee2e2] hover:text-[#991b1b] cursor-pointer"
+                className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-1 text-xs font-semibold text-[#475569] hover:bg-[#fee2e2] hover:text-[#991b1b] disabled:opacity-40 cursor-pointer"
               >
                 <X className="h-3 w-3" />
                 {tr(language, 'Cancelar', 'Cancel')}
               </button>
-              <button
-                type="button"
-                disabled={draftVertices.length < 3}
-                onClick={saveDrawnPolygon}
-                className="ml-auto inline-flex items-center gap-1 rounded bg-[#1b4332] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#143326] disabled:opacity-40 cursor-pointer"
-              >
-                <Check className="h-3.5 w-3.5" />
-                {tr(
-                  language,
-                  `Guardar linderos (${draftVertices.length >= 3 ? computePolygonAreaHa(draftVertices).toFixed(2) : '0.00'} ha)`,
-                  `Save boundary (${draftVertices.length >= 3 ? computePolygonAreaHa(draftVertices).toFixed(2) : '0.00'} ha)`,
+
+              <div className="ml-auto flex flex-wrap items-center gap-1.5">
+                {focusedParcel && (
+                  <button
+                    type="button"
+                    disabled={draftVertices.length < 3 || savingPolygon}
+                    onClick={() => void handleSaveDrawn('update')}
+                    className="inline-flex items-center gap-1 rounded border border-[#1b4332] bg-white px-2.5 py-1 text-xs font-bold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-40 cursor-pointer"
+                  >
+                    <Check className="h-3.5 w-3.5" />
+                    <span className="max-w-[140px] truncate">
+                      {tr(language, `Actualizar "${focusedParcel.name}"`, `Update "${focusedParcel.name}"`)}
+                    </span>
+                  </button>
                 )}
-              </button>
+
+                <button
+                  type="button"
+                  disabled={draftVertices.length < 3 || savingPolygon}
+                  onClick={() => void handleSaveDrawn('create')}
+                  className="inline-flex items-center gap-1 rounded bg-[#1b4332] px-2.5 py-1 text-xs font-bold text-white hover:bg-[#143326] disabled:opacity-40 cursor-pointer"
+                >
+                  <Check className="h-3.5 w-3.5" />
+                  {savingPolygon
+                    ? tr(language, 'Guardando...', 'Saving...')
+                    : tr(
+                        language,
+                        `Guardar nueva parcela (${draftVertices.length >= 3 ? computePolygonAreaHa(draftVertices).toFixed(2) : '0.00'} ha)`,
+                        `Save new field (${draftVertices.length >= 3 ? computePolygonAreaHa(draftVertices).toFixed(2) : '0.00'} ha)`,
+                      )}
+                </button>
+              </div>
             </div>
           </div>
         )}

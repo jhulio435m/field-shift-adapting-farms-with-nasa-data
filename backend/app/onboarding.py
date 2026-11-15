@@ -269,8 +269,8 @@ def add_parcel(farmer_id: str, data: dict) -> dict:
     with connect() as db:
         db.execute("BEGIN IMMEDIATE")
         count = db.execute("SELECT COUNT(*) FROM parcels WHERE farmer_id=?", (farmer_id,)).fetchone()[0]
-        if count >= 8:
-            raise HTTPException(status_code=422, detail="Máximo 8 parcelas por cuenta")
+        if count >= 20:
+            raise HTTPException(status_code=422, detail="Máximo 20 parcelas por cuenta")
         parcel_id = str(uuid4())
         db.execute("""INSERT INTO parcels(id,farmer_id,name,lat,lon,current_crop,irrigation,
                       priority,soil_texture,has_livestock,area_ha,planting_month,polygon_json) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?)""",
