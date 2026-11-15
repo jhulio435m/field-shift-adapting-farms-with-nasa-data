@@ -1,0 +1,10 @@
+{
+  "status": "passed",
+  "checks": [
+    "existing verify_next.py cookie/Origin/CSRF/session/proxy checks",
+    "OIDC disabled in local mode",
+    "fixed upstream with disposable API and users"
+  ],
+  "existing_database_used": false,
+  "external_calls": false
+}

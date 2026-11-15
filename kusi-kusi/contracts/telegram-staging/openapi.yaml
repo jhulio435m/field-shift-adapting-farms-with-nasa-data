@@ -1,0 +1,88 @@
+openapi: 3.1.0
+info:
+  title: Isolated Telegram staging
+  version: '1'
+paths:
+  /health:
+    get:
+      responses:
+        '200': {description: Receiver is running}
+  /webhook:
+    post:
+      description: Telegram private text updates only; explicit one-chat pairing and durable deduplication. Paired text is interpreted using the authorized runtime catalogue into validated read and analysis plans or delegated event subscriptions. No arbitrary code, SQL or business writes.
+      security: [{TelegramSecret: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object, required: [update_id]}
+      responses:
+        '200': {description: Processed, duplicate or ignored unauthorized/unpaired chat}
+        '400': {description: Invalid update}
+        '401': {description: Missing or invalid webhook secret}
+        '404': {description: Unknown path}
+        '413': {description: Body outside 1 to 65536 bytes}
+        '503': {description: Internal failure; no duplicate send retry after a durable claim}
+  /adaptive/events/{source}:
+    post:
+      description: Registered generic source event. Signature covers original body; current permissions and record access are checked before delivery. Claims prevent repeated sends; uncertain sends require review.
+      security: [{FrappeSignature: []}]
+      parameters:
+        - {name: source, in: path, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resource, event_id, kind, values]
+              properties:
+                resource: {type: string}
+                event_id: {type: string, minLength: 1, maxLength: 200}
+                kind: {const: created}
+                values: {type: object}
+                test: {type: boolean, default: false}
+      responses:
+        '200': {description: Processed or ignored duplicate/cancelled event}
+        '400': {description: Invalid shape}
+        '401': {description: Invalid signature}
+        '403': {description: Access or destination revoked}
+        '404': {description: Unregistered source}
+        '413': {description: Oversized body}
+        '503': {description: Dependency unavailable or uncertain processing}
+  /events/coneimera-inscripciones:
+    post:
+      description: Frappe after_insert notification for the single configured CONEIMERA source; HMAC-SHA256 base64 over the original body. Private data omitted; durable event deduplication.
+      security: [{FrappeSignature: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [doctype, event, id, status, ticket, test]
+              properties:
+                doctype: {const: CONEIMERA Inscripcion}
+                event: {const: after_insert}
+                id: {type: string, minLength: 1, maxLength: 140}
+                status: {enum: [DRAFT, CONFIRMED, null, '']}
+                ticket: {enum: [Standard, VIP, Platinum, null, '']}
+                test: {type: boolean}
+      responses:
+        '200': {description: Event claimed or already processed; Telegram acceptance is recorded separately}
+        '400': {description: Invalid event}
+        '401': {description: Invalid signature}
+        '413': {description: Oversized body}
+        '503': {description: No paired destination or persistence unavailable}
+components:
+  securitySchemes:
+    FrappeSignature:
+      type: apiKey
+      in: header
+      name: X-Frappe-Webhook-Signature
+    TelegramSecret:
+      type: apiKey
+      in: header
+      name: X-Telegram-Bot-Api-Secret-Token

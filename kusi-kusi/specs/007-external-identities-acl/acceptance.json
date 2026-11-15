@@ -1,0 +1,79 @@
+{
+  "date": "2026-11-10",
+  "status": "passed_local_acceptance",
+  "postgres": {
+    "status": "passed",
+    "test": "postgres_external_acl_scope_expiry_revocation_and_audit",
+    "database": "fresh disposable loopback PostgreSQL; isolated schema; stopped after checks"
+  },
+  "http": {
+    "status": "passed",
+    "test": "capabilities::tests::http_external_acl_acceptance",
+    "boundary": "production-shared authentication and execution handler over real loopback HTTP; real PostgreSQL; injected synthetic ConnectorExecutor",
+    "checks": [
+      "missing and unknown credentials",
+      "missing identity link and ACL",
+      "exact permitted read invokes connector once",
+      "cross-tenant/resource/version denied before connector",
+      "extra subject or tenant fields rejected",
+      "grant expiration",
+      "global permission still required",
+      "wrong resource in output rejected",
+      "grant and identity revocation",
+      "policy storage failure returns 503",
+      "revoked credential returns 401",
+      "metadata-only audit outcomes"
+    ]
+  },
+  "gates": {
+    "cargo_fmt": "passed",
+    "cargo_clippy": "passed",
+    "cargo_test_workspace": "passed: 76 reported passed, zero failures; two opt-in tests executed separately by the acceptance runner",
+    "python_unit_tests": "11 passed; existing SQLite ResourceWarning remains",
+    "admin_format": "passed",
+    "admin_build": "passed: Next.js Turbopack and TypeScript",
+    "full_runner": "passed: PostgreSQL, HTTP, compiled server, CLI and local external-call blocking"
+  },
+  "external_calls": false,
+  "existing_database_used": false,
+  "production_transport_modified": false,
+  "remaining": [],
+  "previous_blocked_t008_attempt": {
+    "status": "blocked",
+    "reason": "operating_system_permission_denied",
+    "runner_exit_code": 2,
+    "verification_complete": false,
+    "runner_reporting_tests": "5 passed; mocked reporting only, no PostgreSQL/HTTP acceptance",
+    "python_suite": "11 passed; SQLite ResourceWarning observed in existing tests",
+    "cargo_fmt": "passed",
+    "cargo_clippy": "passed",
+    "cargo_test_workspace": "failed at the same two existing loopback listener tests with EPERM",
+    "admin_format": "passed",
+    "admin_build": "Turbopack port binding EPERM"
+  },
+  "full_runner": {
+    "status": "passed",
+    "checks": [
+      "fresh disposable PostgreSQL and migration 0018",
+      "PostgreSQL exact ACL, expiry, revocation and system isolation",
+      "real loopback HTTP boundary with PostgreSQL and synthetic connector",
+      "HTTP credential, tenant, version, input and output validation",
+      "global permission and unavailable-policy fail-closed checks",
+      "compiled server and CLI provisioning/revocation without reactivation",
+      "compiled local runtime blocks capability execution and remote AI"
+    ],
+    "external_calls": false,
+    "existing_database_used": false,
+    "connector": "synthetic test dependency; production transport unchanged"
+  },
+  "execution_context": {
+    "runner": "direct command with enabled permissions",
+    "cargo_test_workspace": "temporary user systemd unit, --wait --pipe --collect",
+    "admin_build": "temporary user systemd unit, --wait --pipe --collect"
+  },
+  "scope_limits": [
+    "manual external identity and permission verification only",
+    "no real provider, production database, channel activation or deployment acceptance",
+    "pre-existing database-dependent Rust tests may return early without TEST_DATABASE_URL; feature 007 database and HTTP tests passed explicitly against a disposable database"
+  ]
+}

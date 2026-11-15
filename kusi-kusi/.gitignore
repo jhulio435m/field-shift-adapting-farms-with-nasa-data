@@ -1,0 +1,13 @@
+.env
+target/
+web/admin/node_modules/
+*.log
+
+__pycache__/
+
+.local-data/
+.local-backups/
+web/admin/dist/
+
+web/admin/.next/
+web/admin/*.tsbuildinfo

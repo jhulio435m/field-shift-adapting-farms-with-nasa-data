@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "checks": [
+    "desktop and mobile real Chromium",
+    "keyboard focus",
+    "invalid callback and retry",
+    "corporate login and provisioned role",
+    "HttpOnly cookie with no frontend admin key or localStorage",
+    "membership revocation",
+    "Origin/CSRF logout through fixed Next proxy",
+    "no horizontal overflow or page errors",
+    "browser requests restricted to loopback"
+  ],
+  "screenshots": 6,
+  "external_calls": false,
+  "existing_database_used": false
+}

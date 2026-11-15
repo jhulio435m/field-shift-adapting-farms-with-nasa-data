@@ -1,0 +1,26 @@
+{
+  "22222222-2222-4222-8222-222222222222": {
+    "product_video": {
+      "provider": "simulated",
+      "model": "fixture",
+      "key_env": null,
+      "input_schema": {
+        "type": "object",
+        "required": [
+          "prompt"
+        ],
+        "additionalProperties": false,
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "defaults": {},
+      "estimated_cost_microusd": 0,
+      "enabled": true
+    }
+  }
+}

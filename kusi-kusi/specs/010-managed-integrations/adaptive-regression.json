@@ -1,0 +1,19 @@
+{
+  "status": "passed",
+  "checks": [
+    "compiled Rust assistant with real PostgreSQL ACL",
+    "registered channel binding and private configuration",
+    "missing policy/grant denied before loopback planner",
+    "catalog hides ungranted resource",
+    "typed aggregate over granted whole dataset",
+    "subscription and signed event through compiled application",
+    "duplicate event produces no second simulated send",
+    "expiry/revocation block receipt replay and later notifications",
+    "local mode and required ACL omission blocked",
+    "caller tenant rejected and changed channel binding denied"
+  ],
+  "planner": "deterministic loopback fixture, no paid LLM",
+  "simulated_sends": 1,
+  "external_calls": false,
+  "existing_database_used": false
+}

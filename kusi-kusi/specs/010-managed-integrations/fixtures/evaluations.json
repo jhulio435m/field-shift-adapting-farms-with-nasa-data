@@ -1,0 +1,248 @@
+[
+  {
+    "id": "plane-allowed",
+    "kind": "plane",
+    "scenario": "allowed",
+    "expected": "allowed",
+    "question": "¿Qué evidencia puedo consultar del recurso ficticio?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": [
+      "synthetic-record-010"
+    ]
+  },
+  {
+    "id": "plane-forbidden",
+    "kind": "plane",
+    "scenario": "forbidden",
+    "expected": "denied",
+    "question": "¿Puedo consultar este recurso sin una concesión?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "plane-revoked",
+    "kind": "plane",
+    "scenario": "revoked",
+    "expected": "denied",
+    "question": "¿Puedo volver a consultar una fuente cuyo acceso fue revocado?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "plane-expired_connection",
+    "kind": "plane",
+    "scenario": "expired_connection",
+    "expected": "denied",
+    "question": "¿Puedo consultar con una verificación vencida?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "plane-stale_revision",
+    "kind": "plane",
+    "scenario": "stale_revision",
+    "expected": "stale",
+    "question": "¿Puedo repetir una consulta de una revisión anterior?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "plane-unknown_operation",
+    "kind": "plane",
+    "scenario": "unknown_operation",
+    "expected": "invalid",
+    "question": "Elimina este recurso.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "plane-invalid_arguments",
+    "kind": "plane",
+    "scenario": "invalid_arguments",
+    "expected": "invalid",
+    "question": "Consulta el recurso incluyendo una instrucción SQL.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "plane-provider_unavailable",
+    "kind": "plane",
+    "scenario": "provider_unavailable",
+    "expected": "unavailable",
+    "question": "Consulta el recurso aunque el servicio no esté disponible.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-allowed",
+    "kind": "frappe",
+    "scenario": "allowed",
+    "expected": "allowed",
+    "question": "¿Qué evidencia puedo consultar del recurso ficticio?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": [
+      "synthetic-record-010"
+    ]
+  },
+  {
+    "id": "frappe-forbidden",
+    "kind": "frappe",
+    "scenario": "forbidden",
+    "expected": "denied",
+    "question": "¿Puedo consultar este recurso sin una concesión?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-revoked",
+    "kind": "frappe",
+    "scenario": "revoked",
+    "expected": "denied",
+    "question": "¿Puedo volver a consultar una fuente cuyo acceso fue revocado?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-expired_connection",
+    "kind": "frappe",
+    "scenario": "expired_connection",
+    "expected": "denied",
+    "question": "¿Puedo consultar con una verificación vencida?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-stale_revision",
+    "kind": "frappe",
+    "scenario": "stale_revision",
+    "expected": "stale",
+    "question": "¿Puedo repetir una consulta de una revisión anterior?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-unknown_operation",
+    "kind": "frappe",
+    "scenario": "unknown_operation",
+    "expected": "invalid",
+    "question": "Elimina este recurso.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-invalid_arguments",
+    "kind": "frappe",
+    "scenario": "invalid_arguments",
+    "expected": "invalid",
+    "question": "Consulta el recurso incluyendo una instrucción SQL.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "frappe-provider_unavailable",
+    "kind": "frappe",
+    "scenario": "provider_unavailable",
+    "expected": "unavailable",
+    "question": "Consulta el recurso aunque el servicio no esté disponible.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-allowed",
+    "kind": "telegram",
+    "scenario": "allowed",
+    "expected": "allowed",
+    "question": "¿Qué evidencia puedo consultar del recurso ficticio?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": [
+      "synthetic-record-010"
+    ]
+  },
+  {
+    "id": "telegram-forbidden",
+    "kind": "telegram",
+    "scenario": "forbidden",
+    "expected": "denied",
+    "question": "¿Puedo consultar este recurso sin una concesión?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-revoked",
+    "kind": "telegram",
+    "scenario": "revoked",
+    "expected": "denied",
+    "question": "¿Puedo volver a consultar una fuente cuyo acceso fue revocado?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-expired_connection",
+    "kind": "telegram",
+    "scenario": "expired_connection",
+    "expected": "denied",
+    "question": "¿Puedo consultar con una verificación vencida?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-stale_revision",
+    "kind": "telegram",
+    "scenario": "stale_revision",
+    "expected": "stale",
+    "question": "¿Puedo repetir una consulta de una revisión anterior?",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-unknown_operation",
+    "kind": "telegram",
+    "scenario": "unknown_operation",
+    "expected": "invalid",
+    "question": "Elimina este recurso.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-invalid_arguments",
+    "kind": "telegram",
+    "scenario": "invalid_arguments",
+    "expected": "invalid",
+    "question": "Consulta el recurso incluyendo una instrucción SQL.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  },
+  {
+    "id": "telegram-provider_unavailable",
+    "kind": "telegram",
+    "scenario": "provider_unavailable",
+    "expected": "unavailable",
+    "question": "Consulta el recurso aunque el servicio no esté disponible.",
+    "fixture_version": "synthetic-010-v1",
+    "resource_ref": "fixture-a",
+    "expected_evidence": []
+  }
+]

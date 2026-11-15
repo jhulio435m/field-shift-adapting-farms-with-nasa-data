@@ -1,0 +1,32 @@
+{
+  "recorded_at": "2026-11-11T02:17:16.264668+00:00",
+  "scope": "local implementation; feature acceptance remains partial for provider activation",
+  "cargo_fmt": "passed",
+  "cargo_clippy": "passed",
+  "cargo_test": {
+    "status": "passed",
+    "reported_passed": 92,
+    "opt_in_ignored_by_workspace_command": 3,
+    "opt_in_exercised_separately": 3
+  },
+  "python_unittest": {
+    "status": "passed",
+    "tests": 14
+  },
+  "next_format": "passed",
+  "next_turbopack_build": "passed",
+  "openapi": "parsed and local references resolved",
+  "acceptance": {
+    "api-acceptance.json": "passed",
+    "settings-regression.json": "passed",
+    "external-regression.json": "passed",
+    "adaptive-regression.json": "passed",
+    "next-regression.json": "passed",
+    "container-acceptance.json": "passed",
+    "qa/browser-acceptance.json": "passed"
+  },
+  "design_detector": "no findings",
+  "provider_activation": "not implemented in OIDC control plane; blocked in local mode",
+  "real_provider_evidence": "not run",
+  "existing_database_used": false
+}

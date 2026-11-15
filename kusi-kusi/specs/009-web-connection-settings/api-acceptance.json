@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "checks": [
+    "three tenant-scoped profiles via authenticated API",
+    "CSRF/Origin/session/owner RBAC and caller tenant rejection",
+    "write-only encrypted credentials and payload-free audit",
+    "blank edit preserves existing secrets",
+    "optimistic revision conflicts and explicit credential rotation",
+    "tampered ciphertext fails closed without revision change",
+    "explicit clear deletes encrypted credentials",
+    "real restart preserves key and encrypted state",
+    "missing or publicly readable master key blocks startup",
+    "saving does not activate Telegram or provider calls"
+  ],
+  "external_calls": false,
+  "existing_database_used": false
+}

@@ -1,0 +1,18 @@
+{
+  "status": "passed",
+  "checks": [
+    "fresh PostgreSQL container on internal network",
+    "Rust image migrations/readiness and FFmpeg/font",
+    "Next standalone image SSR/CSS",
+    "fixed upstream proxy and private no-store response",
+    "admin session unauthorized through image proxy",
+    "OpenAPI proxy",
+    "published ports only on loopback"
+  ],
+  "images": {
+    "api": "sha256:1ee9c50aceaace41cea4cddd9a5dbd47af98634b245c8e8eadd645bec256f26b",
+    "web": "sha256:32febf7f0e3438a67b770e997945e51779408e27fbc8808c2808515bb427891f"
+  },
+  "existing_database_used": false,
+  "application_external_egress": "blocked by internal Docker network"
+}

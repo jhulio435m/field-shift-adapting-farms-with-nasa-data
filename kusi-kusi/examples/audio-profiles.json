@@ -1,0 +1,25 @@
+{
+  "22222222-2222-4222-8222-222222222222": {
+    "groq_whisper": {
+      "provider": "groq",
+      "model": "whisper-large-v3-turbo",
+      "api_key_env": "GROQ_API_KEY",
+      "endpoint": null,
+      "timeout_ms": 60000
+    },
+    "openai_audio": {
+      "provider": "openai",
+      "model": "SET_TRANSCRIPTION_MODEL_ID",
+      "api_key_env": "OPENAI_API_KEY",
+      "endpoint": null,
+      "timeout_ms": 60000
+    },
+    "local_whisper": {
+      "provider": "local",
+      "model": "SET_LOCAL_MODEL_ID",
+      "api_key_env": null,
+      "endpoint": "http://127.0.0.1:8088/v1/audio/transcriptions",
+      "timeout_ms": 60000
+    }
+  }
+}

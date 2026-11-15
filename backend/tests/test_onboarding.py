@@ -73,3 +73,91 @@ def test_unconfigured_verification_stays_closed(tmp_path, monkeypatch) -> None:
     client = TestClient(app)
     assert client.post('/v1/onboarding/start', json={
         'name': 'Prueba', 'phone': '+51933333333'}).status_code == 503
+
+
+def test_telegram_only_demo_mode_and_parcel_metadata(tmp_path, monkeypatch) -> None:
+    key = 'synthetic-verifier-key-at-least-thirty-two-characters'
+    monkeypatch.setenv('FIELD_SHIFT_DB', str(tmp_path / 'farmers.sqlite3'))
+    monkeypatch.setenv('FIELD_SHIFT_KUSI_VERIFY_KEY', key)
+    monkeypatch.setenv('FIELD_SHIFT_DEMO_MODE', '1')
+    client = TestClient(app)
+
+    started = client.post('/v1/onboarding/start', json={
+        'name': 'Productora Telegram',
+        'phone': '',
+        'preferred_channel': 'telegram',
+        'telegram_handle': '@agro_mantaro',
+        'bot_audience': 'agronomist',
+        'alert_frequency': 'weekly',
+    })
+    assert started.status_code == 200
+    body = started.json()
+    assert body['demo_mode'] is True
+    assert client.post('/v1/onboarding/claim', json={'code': body['claim_code']}).status_code == 200
+
+    me = client.get('/v1/me').json()
+    assert me['bot_config']['preferred_channel'] == 'telegram'
+    assert me['bot_config']['telegram_handle'] == '@agro_mantaro'
+    assert me['bot_config']['bot_audience'] == 'agronomist'
+
+    saved = client.post('/v1/parcels', json={
+        'name': 'Lote con hectareas',
+        'lat': -12.065,
+        'lon': -75.205,
+        'current_crop': 'potato_continuous',
+        'irrigation': 'rainfed',
+        'priority': 'soil_health',
+        'soil_texture': 'loam',
+        'has_livestock': False,
+        'area_ha': 2.5,
+        'planting_month': 10,
+    }, headers={'X-CSRF-Token': me['csrf']})
+    assert saved.status_code == 200
+    assert saved.json()['area_ha'] == 2.5
+    assert saved.json()['planting_month'] == 10
+
+
+def test_demo_onboarding_seeds_parcels_and_supports_crud_and_logout(tmp_path, monkeypatch) -> None:
+    monkeypatch.setenv('FIELD_SHIFT_DB', str(tmp_path / 'farmers.sqlite3'))
+    monkeypatch.delenv('FIELD_SHIFT_KUSI_VERIFY_KEY', raising=False)
+    client = TestClient(app)
+
+    demo_resp = client.post('/v1/onboarding/demo', json={'seed_parcels': True, 'bot_language': 'es'})
+    assert demo_resp.status_code == 200
+    assert demo_resp.json()['demo_mode'] is True
+    csrf = demo_resp.json()['csrf']
+
+    me_resp = client.get('/v1/me')
+    assert me_resp.status_code == 200
+    parcels = me_resp.json()['parcels']
+    assert len(parcels) == 2
+
+    target_id = parcels[0]['id']
+    update_resp = client.put(
+        f'/v1/parcels/{target_id}',
+        json={
+            'name': 'Lote Mantaro Actualizado',
+            'lat': -12.07,
+            'lon': -75.21,
+            'current_crop': 'maize_continuous',
+            'irrigation': 'limited',
+            'priority': 'water',
+            'soil_texture': 'loam',
+            'has_livestock': False,
+            'area_ha': 3.2,
+            'planting_month': 9,
+        },
+        headers={'X-CSRF-Token': csrf},
+    )
+    assert update_resp.status_code == 200
+    assert update_resp.json()['name'] == 'Lote Mantaro Actualizado'
+    assert update_resp.json()['current_crop'] == 'maize_continuous'
+
+    delete_resp = client.delete(f'/v1/parcels/{target_id}', headers={'X-CSRF-Token': csrf})
+    assert delete_resp.status_code == 200
+    assert delete_resp.json() == {'status': 'deleted', 'id': target_id}
+    assert len(client.get('/v1/me').json()['parcels']) == 1
+
+    logout_resp = client.post('/v1/onboarding/logout')
+    assert logout_resp.status_code == 200
+    assert client.get('/v1/me').status_code == 401

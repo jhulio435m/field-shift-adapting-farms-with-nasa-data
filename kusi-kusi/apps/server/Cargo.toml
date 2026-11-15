@@ -1,0 +1,31 @@
+[package]
+name = "kusi-server"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+
+[dependencies]
+hmac = "0.12"
+sha2.workspace = true
+hex.workspace = true
+axum.workspace = true
+dotenvy.workspace = true
+kusi-application = { path = "../../crates/application" }
+kusi-domain = { path = "../../crates/domain" }
+kusi-infrastructure = { path = "../../crates/infrastructure" }
+serde.workspace = true
+serde_json.workspace = true
+sqlx.workspace = true
+subtle.workspace = true
+tokio.workspace = true
+tower-http.workspace = true
+tracing.workspace = true
+tracing-subscriber.workspace = true
+uuid.workspace = true
+url.workspace = true
+
+chrono = { version = "0.4", default-features = false, features = ["std", "clock", "serde"] }
+
+[dev-dependencies]
+async-trait.workspace = true
+reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }

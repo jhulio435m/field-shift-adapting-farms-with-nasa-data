@@ -1,0 +1,47 @@
+{
+  "date": "2026-11-10",
+  "status": "passed_local_acceptance",
+  "tasks": "T001–T007 complete; OIDC 004/T015 complete",
+  "gates": {
+    "cargo_fmt": "passed",
+    "cargo_clippy": "passed",
+    "cargo_test_workspace": {
+      "reported_passed": 80,
+      "failed": 0,
+      "opt_in_tests_executed_separately": 2
+    },
+    "python_unittest": {
+      "passed": 14,
+      "resource_warning_policy": "error",
+      "resource_warnings_observed": 0
+    },
+    "admin_format": "passed",
+    "admin_build": "passed, Turbopack and TypeScript"
+  },
+  "artifacts": [
+    "adaptive-acceptance.json",
+    "external-access-regression.json",
+    "next-acceptance.json",
+    "oidc-protocol-acceptance.json",
+    "qa/acceptance.json",
+    "container-acceptance.json"
+  ],
+  "visual_review": {
+    "screenshots": 6,
+    "desktop": "1440x900",
+    "mobile": "390x844",
+    "status": "passed; all six screenshots inspected"
+  },
+  "cleanup": "temporary PostgreSQL processes, application/Next servers, test containers and network removed; pre-existing containers retained",
+  "runtime_provider_calls": false,
+  "existing_database_used": false,
+  "staging_changed": false,
+  "limits": [
+    "whole analytical dataset ACL, not per-row policy",
+    "manual external identity/permission verification; no remote ACL synchronizer",
+    "legacy staging not migrated; protected deployments require explicit private configuration",
+    "no paid LLM, real sends, social publishing or real OIDC provider activated",
+    "containers checked from their internal network namespace; loopback-only published bindings verified",
+    "pre-existing configuration-dependent database tests may return early; feature-specific PostgreSQL acceptance executed explicitly"
+  ]
+}

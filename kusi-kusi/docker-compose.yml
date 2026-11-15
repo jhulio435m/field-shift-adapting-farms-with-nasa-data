@@ -1,0 +1,47 @@
+services:
+  postgres:
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kusi
+      POSTGRES_USER: kusi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?Set POSTGRES_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:${POSTGRES_PORT:-5433}:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kusi -d kusi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+
+  api:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile
+    environment:
+      DATABASE_URL: postgres://kusi:${POSTGRES_PASSWORD}@postgres:5432/kusi
+      KUSI_ADMIN_API_KEY: ${KUSI_ADMIN_API_KEY:?Set KUSI_ADMIN_API_KEY in .env}
+      BIND_ADDRESS: 0.0.0.0:8080
+      RUST_LOG: info
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+
+  web:
+    profiles: [panel]
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.web
+    environment:
+      KUSI_API_ORIGIN: http://api:8080
+      NEXT_TELEMETRY_DISABLED: "1"
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      - api
+
+volumes:
+  postgres_data:

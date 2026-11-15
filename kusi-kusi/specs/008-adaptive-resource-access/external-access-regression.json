@@ -1,0 +1,15 @@
+{
+  "status": "passed",
+  "checks": [
+    "fresh disposable PostgreSQL and migration 0018",
+    "PostgreSQL exact ACL, expiry, revocation and system isolation",
+    "real loopback HTTP boundary with PostgreSQL and synthetic connector",
+    "HTTP credential, tenant, version, input and output validation",
+    "global permission and unavailable-policy fail-closed checks",
+    "compiled server and CLI provisioning/revocation without reactivation",
+    "compiled local runtime blocks capability execution and remote AI"
+  ],
+  "external_calls": false,
+  "existing_database_used": false,
+  "connector": "synthetic test dependency; production transport unchanged"
+}

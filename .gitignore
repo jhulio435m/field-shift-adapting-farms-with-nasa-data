@@ -1,7 +1,15 @@
+.env
+.pytest_cache/
 backend/.local-data/
 backend/.venv/
 backend/.pytest_cache/
 **/__pycache__/
+frontend/node_modules/
+frontend/dist/
+kusi-kusi/.env
+kusi-kusi/.local-data/
+kusi-kusi/.local-backups/
+kusi-kusi/target/
 .impeccable/
 .agents/
 .codex/

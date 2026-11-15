@@ -1,0 +1,8 @@
+{
+  "status": "passed",
+  "checks": [
+    "existing verify_oidc.py complete positive and negative protocol suite"
+  ],
+  "external_calls": false,
+  "existing_database_used": false
+}

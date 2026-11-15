@@ -1,0 +1,15 @@
+target
+.git
+.env
+web/admin/node_modules
+
+.local-data
+.local-backups
+web/admin/dist
+
+web/admin/.next
+web/admin/*.tsbuildinfo
+
+.env*
+!.env.example
+coverage/

@@ -1,0 +1,129 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+@import "../style.css";
+@custom-variant dark (&:is(.dark *));
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+}
+:root {
+  --radius: 0.625rem;
+  --background: #f7f8f4;
+  --foreground: #24352f;
+  --card: #ffffff;
+  --card-foreground: #24352f;
+  --popover: #ffffff;
+  --popover-foreground: #24352f;
+  --primary: #214c3e;
+  --primary-foreground: #ffffff;
+  --secondary: #ecf0e7;
+  --secondary-foreground: #344d3c;
+  --muted: #eff2eb;
+  --muted-foreground: #617164;
+  --accent: #e7eee1;
+  --accent-foreground: #214c3e;
+  --destructive: #a13f2c;
+  --border: #dce3d7;
+  --input: #cbd6c7;
+  --ring: #4f7962;
+  --sidebar: #edf1e8;
+  --sidebar-foreground: #304737;
+  --sidebar-primary: #214c3e;
+  --sidebar-primary-foreground: #ffffff;
+  --sidebar-accent: #dfe9d7;
+  --sidebar-accent-foreground: #214c3e;
+  --sidebar-border: #d5dece;
+  --sidebar-ring: #4f7962;
+}
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+  button:not(:disabled),
+  [role="button"]:not(:disabled) {
+    cursor: pointer;
+  }
+  ::selection {
+    background: #d7e6cb;
+    color: #173d35;
+  }
+}
+.kk-page {
+  width: 100%;
+  max-width: 1500px;
+  margin-inline: auto;
+  min-width: 0;
+}
+.kk-page label:has(> input),
+.kk-page label:has(> textarea),
+.kk-page label:has(> div > [data-slot="native-select"]) {
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 8px;
+}
+.kk-page [data-slot="card"].panel {
+  box-shadow: none;
+  gap: 20px;
+}
+.kk-page button.primary {
+  background: var(--primary);
+  color: var(--primary-foreground);
+  border-color: var(--primary);
+}
+.kk-page [data-slot="button"] {
+  white-space: normal;
+}
+.kk-page [data-slot="badge"] {
+  white-space: nowrap;
+}
+.kk-page .chat-layout {
+  height: calc(100svh - 215px);
+  min-height: 580px;
+  max-height: 1000px;
+}
+@media (max-width: 760px) {
+  .kk-page .chat-layout {
+    height: 700px;
+    min-height: 0;
+  }
+  .kk-page .split {
+    grid-template-columns: 1fr;
+  }
+}
+
+.kk-page [data-slot="native-select-wrapper"] {
+  width: 100%;
+  max-width: 100%;
+}

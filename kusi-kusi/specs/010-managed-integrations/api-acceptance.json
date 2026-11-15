@@ -1,0 +1,24 @@
+{
+  "status": "passed",
+  "external_calls": false,
+  "checks": [
+    "three manifests",
+    "fixture revision lifecycle",
+    "local provider/activation block",
+    "rotation and clear invalidate verification",
+    "tenant isolation",
+    "CSRF and unknown field rejection",
+    "typed fixture read through 007 identity/resource ACL",
+    "revocation blocks fixture evidence",
+    "binding revoke is versioned and tenant scoped",
+    "durable outbox timeline, CAS cancel and uncertain no-retry",
+    "24 deterministic evaluation cases persisted",
+    "memory opt-in, encrypted, actor-scoped and revoked source erased",
+    "read-only permission simulation",
+    "real compiled-server restart preserves state",
+    "compiled adaptive assistant consumes saved fixture profile, ACL and revision, with stale receipt denied before loopback planner",
+    "typed synthetic reads and revocation for Plane, Frappe and Telegram",
+    "expired and changed-source memory never contributes to recovery",
+    "compiled inbox worker deduplicates reordered events and refuses revoked or expired binding context"
+  ]
+}

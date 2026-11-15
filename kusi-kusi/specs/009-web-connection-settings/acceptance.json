@@ -1,0 +1,54 @@
+{
+  "date": "2026-11-10",
+  "status": "passed_local_acceptance",
+  "pilot": {
+    "systems": [
+      "Plane",
+      "ERP CONEIMERA (Frappe)"
+    ],
+    "channel": "Telegram"
+  },
+  "implemented": [
+    "owner-only web configuration for three profiles",
+    "write-only API credentials and tokens",
+    "authenticated encryption bound to organization/profile/kind/revision",
+    "persisted private master key with fail-closed loss/permission handling",
+    "optimistic revisions, credential preservation/rotation/clear and atomic audit",
+    "generic redacted malformed-input errors",
+    "responsive desktop/mobile forms and non-owner denial"
+  ],
+  "gates": {
+    "cargo_fmt": "passed",
+    "cargo_clippy": "passed",
+    "cargo_test_workspace": {
+      "reported_passed": 83,
+      "failed": 0,
+      "opt_in_tests_executed_separately": 2
+    },
+    "python_unittest": {
+      "passed": 14,
+      "ResourceWarning": "error; no warnings observed"
+    },
+    "admin_format": "passed",
+    "admin_build": "passed; Turbopack and TypeScript",
+    "impeccable_detector": "no deterministic findings; screenshots reviewed"
+  },
+  "artifacts": [
+    "api-acceptance.json",
+    "qa/browser-acceptance.json",
+    "next-regression.json",
+    "external-access-regression.json"
+  ],
+  "schema_migration": "0019_managed_connection_settings.sql",
+  "runtime_provider_calls": false,
+  "existing_database_used": false,
+  "staging_changed": false,
+  "activation": "not implemented; saved local configuration is not consumed by legacy runtime profiles",
+  "limits": [
+    "owner local sessions only; production OIDC administration remains separate",
+    "syntax/presence validation only, not remote authentication",
+    "no real webhook registration, sends or provider activation",
+    "master-key rotation/recovery requires a separate procedure and private key backup",
+    "two-image container tests not rerun: proxy/frontend-runtime boundary unchanged; new API and browser/proxy regressions passed"
+  ]
+}

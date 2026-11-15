@@ -1,0 +1,63 @@
+services:
+  field-shift:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    ports:
+      - "${PORT:-8000}:8000"
+    environment:
+      FIELD_SHIFT_DB: /app/data/farmers.sqlite3
+      FIELD_SHIFT_KUSI_VERIFY_KEY: ${FIELD_SHIFT_KUSI_VERIFY_KEY:-}
+      FIELD_SHIFT_DEMO_MODE: ${FIELD_SHIFT_DEMO_MODE:-0}
+    volumes:
+      - field_shift_data:/app/data
+    healthcheck:
+      test:
+        [
+          "CMD",
+          "python",
+          "-c",
+          "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8000/health', timeout=3)",
+        ]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+    restart: unless-stopped
+
+  kusi-postgres:
+    profiles: ["kusi"]
+    image: postgres:17-alpine
+    environment:
+      POSTGRES_DB: kusi
+      POSTGRES_USER: kusi
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-kusi_change_me}
+    volumes:
+      - kusi_postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U kusi -d kusi"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    restart: unless-stopped
+
+  kusi-api:
+    profiles: ["kusi"]
+    build:
+      context: ./kusi-kusi
+      dockerfile: infra/docker/Dockerfile
+    environment:
+      DATABASE_URL: postgres://kusi:${POSTGRES_PASSWORD:-kusi_change_me}@kusi-postgres:5432/kusi
+      KUSI_ADMIN_API_KEY: ${KUSI_ADMIN_API_KEY:-change-me-kusi-admin-key}
+      BIND_ADDRESS: 0.0.0.0:8080
+      RUST_LOG: info
+    ports:
+      - "${KUSI_PORT:-8080}:8080"
+    depends_on:
+      kusi-postgres:
+        condition: service_healthy
+    restart: unless-stopped
+
+volumes:
+  field_shift_data:
+  kusi_postgres_data:

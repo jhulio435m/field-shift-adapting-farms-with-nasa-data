@@ -4,11 +4,17 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
+import hashlib
+import hmac
+import os
 from pathlib import Path
+import time
+from uuid import uuid4
 
 from fastapi import Cookie, FastAPI, Header, HTTPException, Request, Response
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse
+from fastapi.staticfiles import StaticFiles
 
 from .correlation import fetch_historical_correlation
 from .forecast_alerts import WeeklyAlertSummary, fetch_weekly_alerts
@@ -18,6 +24,7 @@ from . import onboarding
 from .rotation_engine import compare_rotations
 from .schemas import (
     AlertCheckRequest,
+    BotConfigRequest,
     KusiCapabilityRequest,
     KusiCapabilityResponse,
     ParcelDiagnoseRequest,
@@ -29,9 +36,11 @@ from .schemas import (
     ClaimRequest,
     ParcelCreateRequest,
     ScenarioRequest,
+    DemoStartRequest,
 )
 
 STATIC_DIR = Path(__file__).parent / "static"
+FRONTEND_DIST_DIR = Path(__file__).resolve().parents[2] / "frontend" / "dist"
 
 @asynccontextmanager
 async def lifespan(_: FastAPI):
@@ -59,8 +68,15 @@ app.add_middleware(
 )
 
 
+if (FRONTEND_DIST_DIR / "assets").is_dir():
+    app.mount("/assets", StaticFiles(directory=FRONTEND_DIST_DIR / "assets"), name="frontend-assets")
+
+
 @app.get("/", include_in_schema=False)
 async def serve_ui() -> FileResponse:
+    dist_index = FRONTEND_DIST_DIR / "index.html"
+    if dist_index.is_file():
+        return FileResponse(dist_index)
     return FileResponse(STATIC_DIR / "index.html")
 
 
@@ -186,7 +202,23 @@ async def telegram_webhook() -> None:
 
 @app.post("/v1/onboarding/start")
 async def start_onboarding(req: FarmerStartRequest) -> dict:
-    return onboarding.start(req.name, req.phone)
+    result = onboarding.start(
+        req.name,
+        req.phone,
+        req.model_dump(exclude={"name", "phone"}),
+    )
+    if os.environ.get("FIELD_SHIFT_DEMO_MODE") == "1":
+        key = onboarding.verifier_key()
+        when = int(time.time())
+        event_id = f"demo-{uuid4()}"
+        identity = req.phone or f"tg:{req.telegram_handle.strip().lower()}"
+        msg = f"{result['challenge']}\n{identity}\n{when}\n{event_id}".encode()
+        sig = hmac.new(key, msg, hashlib.sha256).hexdigest()
+        result["claim_code"] = onboarding.confirm(
+            result["challenge"], identity, when, event_id, sig
+        )
+        result["demo_mode"] = True
+    return result
 
 
 @app.post("/v1/onboarding/confirm")
@@ -205,11 +237,80 @@ async def claim_session(req: ClaimRequest, response: Response, request: Request)
     return {"status": "verified", "csrf": csrf}
 
 
+@app.post("/v1/onboarding/demo")
+async def demo_onboarding(req: DemoStartRequest, response: Response, request: Request) -> dict:
+    token, csrf = onboarding.start_demo(req.model_dump())
+    response.set_cookie("field_shift_session", token, httponly=True, samesite="lax",
+                        secure=request.url.scheme == "https", max_age=86400)
+    return {"status": "verified", "csrf": csrf, "demo_mode": True}
+
+
+@app.post("/v1/onboarding/logout")
+async def logout_session(
+    response: Response,
+    field_shift_session: str | None = Cookie(default=None),
+) -> dict:
+    onboarding.logout(field_shift_session)
+    response.delete_cookie("field_shift_session")
+    return {"status": "logged_out"}
+
+
 @app.get("/v1/me")
 async def me(field_shift_session: str | None = Cookie(default=None)) -> dict:
     farmer = onboarding.farmer(field_shift_session)
-    return {"name": farmer["name"], "phone_last4": farmer["phone_last4"],
-            "csrf": farmer["csrf"], "parcels": onboarding.list_parcels(farmer["id"])}
+    return {
+        "name": farmer["name"],
+        "phone_last4": farmer["phone_last4"],
+        "csrf": farmer["csrf"],
+        "bot_config": onboarding.bot_config(farmer),
+        "parcels": onboarding.list_parcels(farmer["id"]),
+    }
+
+
+@app.put("/v1/bot/config")
+async def update_bot_config(
+    req: BotConfigRequest,
+    field_shift_session: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None),
+) -> dict:
+    farmer = onboarding.farmer(field_shift_session)
+    onboarding.require_csrf(farmer, x_csrf_token)
+    return onboarding.update_bot_config(farmer["id"], req.model_dump())
+
+
+@app.get("/v1/bot/kusi-source")
+async def get_kusi_source_config(
+    parcel_id: str | None = None,
+    field_shift_session: str | None = Cookie(default=None),
+) -> dict:
+    farmer = onboarding.farmer(field_shift_session)
+    cfg = onboarding.bot_config(farmer)
+    parcels = onboarding.list_parcels(farmer["id"])
+    target = (
+        next((p for p in parcels if p["id"] == parcel_id), None)
+        if parcel_id
+        else (parcels[0] if parcels else None)
+    )
+    return {
+        "protocol": "field_shift_loopback",
+        "enabled": cfg["alerts_enabled"],
+        "channel": cfg["preferred_channel"],
+        "telegram_handle": cfg["telegram_handle"],
+        "alert_frequency": cfg["alert_frequency"],
+        "label": target["name"] if target else farmer["name"],
+        "endpoint": "http://127.0.0.1:8000/v1/kusi/capability",
+        "parcel": {
+            "lat": target["lat"] if target else -12.065,
+            "lon": target["lon"] if target else -75.2049,
+            "current_crop": target["current_crop"] if target else "maize_continuous",
+            "irrigation": target["irrigation"] if target else "rainfed",
+            "priority": target["priority"] if target else "water",
+            "soil_texture": target["soil_texture"] if target else "unknown",
+            "has_livestock": bool(target["has_livestock"]) if target else False,
+            "audience": cfg["bot_audience"],
+            "language": cfg["bot_language"],
+        },
+    }
 
 
 @app.post("/v1/parcels")
@@ -219,6 +320,34 @@ async def create_parcel(req: ParcelCreateRequest,
     farmer = onboarding.farmer(field_shift_session)
     onboarding.require_csrf(farmer, x_csrf_token)
     return onboarding.add_parcel(farmer["id"], req.model_dump(exclude={"rain_delta_pct", "temp_delta_c"}))
+
+
+@app.put("/v1/parcels/{parcel_id}")
+async def update_registered_parcel(
+    parcel_id: str,
+    req: ParcelCreateRequest,
+    field_shift_session: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None),
+) -> dict:
+    farmer = onboarding.farmer(field_shift_session)
+    onboarding.require_csrf(farmer, x_csrf_token)
+    return onboarding.update_parcel(
+        farmer["id"],
+        parcel_id,
+        req.model_dump(exclude={"rain_delta_pct", "temp_delta_c"}),
+    )
+
+
+@app.delete("/v1/parcels/{parcel_id}")
+async def delete_registered_parcel(
+    parcel_id: str,
+    field_shift_session: str | None = Cookie(default=None),
+    x_csrf_token: str | None = Header(default=None),
+) -> dict:
+    farmer = onboarding.farmer(field_shift_session)
+    onboarding.require_csrf(farmer, x_csrf_token)
+    onboarding.delete_parcel(farmer["id"], parcel_id)
+    return {"status": "deleted", "id": parcel_id}
 
 
 @app.post("/v1/parcels/{parcel_id}/analyze", response_model=RotationCompareResponse)

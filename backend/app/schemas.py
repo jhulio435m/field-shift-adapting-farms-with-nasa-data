@@ -18,6 +18,9 @@ CropKey = Literal[
     "mixed_vegetables",
 ]
 Language = Literal["es", "en"]
+BotChannelType = Literal["whatsapp", "telegram", "both"]
+AlertFrequencyType = Literal["immediate", "weekly", "on_demand"]
+AudienceType = Literal["farmer", "agronomist"]
 
 
 class ParcelDiagnoseRequest(BaseModel):
@@ -163,7 +166,22 @@ class TelegramWebhookResponse(BaseModel):
 
 class FarmerStartRequest(BaseModel):
     name: str = Field(..., min_length=2, max_length=100)
-    phone: str = Field(..., min_length=9, max_length=16)
+    phone: str = Field(default="", max_length=16)
+    preferred_channel: BotChannelType = Field(default="whatsapp")
+    telegram_handle: str = Field(default="", max_length=64)
+    bot_language: Language = Field(default="es")
+    bot_audience: AudienceType = Field(default="farmer")
+    alert_frequency: AlertFrequencyType = Field(default="immediate")
+    alerts_enabled: bool = Field(default=True)
+
+
+class BotConfigRequest(BaseModel):
+    preferred_channel: BotChannelType = Field(default="whatsapp")
+    telegram_handle: str = Field(default="", max_length=64)
+    bot_language: Language = Field(default="es")
+    bot_audience: AudienceType = Field(default="farmer")
+    alert_frequency: AlertFrequencyType = Field(default="immediate")
+    alerts_enabled: bool = Field(default=True)
 
 
 class KusiVerifyProof(BaseModel):
@@ -180,9 +198,23 @@ class ClaimRequest(BaseModel):
 
 class ParcelCreateRequest(RotationCompareRequest):
     name: str = Field(..., min_length=1, max_length=80)
+    area_ha: float | None = Field(default=None, ge=0.01, le=100000.0)
+    planting_month: int | None = Field(default=None, ge=1, le=12)
 
 
 class ScenarioRequest(BaseModel):
     rain_delta_pct: float = Field(default=0.0, ge=-50.0, le=50.0)
     temp_delta_c: float = Field(default=0.0, ge=-2.0, le=5.0)
     language: Language = "es"
+
+
+class DemoStartRequest(BaseModel):
+    name: str = Field(default="María Quispe", min_length=2, max_length=100)
+    phone: str = Field(default="+51987654321", max_length=16)
+    preferred_channel: BotChannelType = Field(default="whatsapp")
+    telegram_handle: str = Field(default="@maria_mantaro", max_length=64)
+    bot_language: Language = Field(default="es")
+    bot_audience: AudienceType = Field(default="farmer")
+    alert_frequency: AlertFrequencyType = Field(default="immediate")
+    alerts_enabled: bool = Field(default=True)
+    seed_parcels: bool = Field(default=True)

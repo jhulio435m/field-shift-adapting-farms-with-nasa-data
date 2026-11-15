@@ -1,0 +1,9 @@
+# Contratos de proveedores — identidad y alcance
+
+Consultados el 2026-11-10. Versiones de contrato internas: plane.v2.current_user/1, frappe.v1.logged_user/1, telegram.bot_api.getMe/1. No se comprobó versión instalada ni permisos del ERP o Plane reales. Los fixtures son sintéticos y no prueban compatibilidad de instalación.
+
+- Plane: [API v2 / current user](https://developers.plane.so/api-reference/v2/users/get-current-user), GET `/api/v2/users/me/`, encabezado X-Api-Key. Identidad requiere objeto con ID válido; no confundir HTML/200 con identidad. La versión v1 de instalaciones existentes requiere contrato separado, sin fallback silencioso. Alcance sobre workspace/proyecto se verifica mediante capacidad/recurso específico y ACL, nunca por el probe de identidad.
+- Frappe: [REST API](https://docs.frappe.io/framework/user/en/api/rest), GET `/api/method/frappe.auth.get_logged_user`, Authorization `token API_KEY:API_SECRET`; respuesta `message` identidad. Lectura de documento `/api/resource/:doctype/:name` tiene permisos propios y exige mapeo/contrato por instalación; no aceptar DocType o SQL arbitrario del modelo.
+- Telegram: [getMe](https://core.telegram.org/bots/api#getme), GET del Bot API, requiere `ok=true` y objeto result con `is_bot=true` e ID. Token forma parte de ruta privada: jamás registrar URL, errores reqwest ni cuerpo. getMe no prueba permiso para enviar a un chat ni registra webhook.
+
+En modo local no se construye cliente HTTP de proveedor ni se descifran credenciales para un probe. La simulación comprueba presencia de campos y registra `synthetic_identity_only`, sin afirmar validación de credencial, identidad real o alcance remoto. El transporte real permanece deshabilitado hasta implementar y probar su política de egress en un entorno separado; no hay bypass por campo de formulario.

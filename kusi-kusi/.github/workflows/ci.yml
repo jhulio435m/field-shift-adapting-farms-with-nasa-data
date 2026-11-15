@@ -1,0 +1,47 @@
+name: Rust and Next CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  checks:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17-alpine
+        env:
+          POSTGRES_USER: kusi_ci
+          POSTGRES_PASSWORD: ci_fixture_only
+          POSTGRES_DB: kusi_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U kusi_ci -d kusi_ci"
+          --health-interval 5s
+          --health-timeout 3s
+          --health-retries 10
+    env:
+      TEST_DATABASE_URL: postgres://kusi_ci:ci_fixture_only@127.0.0.1:5432/kusi_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt, clippy
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: web/admin/package-lock.json
+      - run: sudo apt-get update && sudo apt-get install -y ffmpeg fonts-dejavu-core postgresql-client
+      - run: npm ci --prefix web/admin
+      - run: npm run format:check --prefix web/admin
+      - run: npm run build --prefix web/admin
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy --workspace --all-targets -- -D warnings
+      - run: cargo test --workspace
+      - run: cargo build --workspace
+      - run: python3 scripts/verify_local.py
+        env:
+          DATABASE_URL: postgres://kusi_ci:ci_fixture_only@127.0.0.1:5432/kusi_ci

@@ -1,0 +1,25 @@
+openapi: 3.1.0
+info:
+  title: Kusi Kusi WhatsApp synthetic staging
+  version: 0.1.0
+paths:
+  /webhook:
+    get:
+      summary: Meta verification challenge using constant-time verify token validation
+      parameters:
+        - {in: query, name: hub.mode, required: true, schema: {type: string, const: subscribe}}
+        - {in: query, name: hub.verify_token, required: true, schema: {type: string}}
+        - {in: query, name: hub.challenge, required: true, schema: {type: string, maxLength: 512}}
+      responses:
+        '200': {description: Original challenge}
+        '403': {description: Invalid token or mode}
+    post:
+      summary: Signed Meta text/image/audio event; optional Groq transcription in staging; synthetic payments replies to one configured test recipient only
+      parameters:
+        - {in: header, name: X-Hub-Signature-256, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Event processed or ignored; does not prove recipient delivery}
+        '400': {description: Invalid payload}
+        '401': {description: Invalid signature}
+        '413': {description: Body exceeds 256 KiB}
+        '503': {description: Durable claim unavailable}

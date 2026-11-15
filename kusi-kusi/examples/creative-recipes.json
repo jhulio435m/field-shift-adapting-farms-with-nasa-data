@@ -1,0 +1,59 @@
+{
+  "22222222-2222-4222-8222-222222222222": {
+    "motion_transfer": {
+      "provider": "higgsfield",
+      "model": "higgsfield/genjutsu/motion-transfer/v1.0",
+      "key_env": "HF_CREDENTIALS",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "video_url",
+          "image_urls"
+        ],
+        "properties": {
+          "video_url": {
+            "type": "string",
+            "format": "uri",
+            "pattern": "^https://"
+          },
+          "image_urls": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 1,
+            "items": {
+              "type": "string",
+              "format": "uri",
+              "pattern": "^https://"
+            }
+          }
+        }
+      },
+      "defaults": {},
+      "estimated_cost_microusd": 0,
+      "enabled": false
+    },
+    "image_from_prompt": {
+      "provider": "fal",
+      "model": "fal-ai/flux/schnell",
+      "key_env": "FAL_KEY",
+      "input_schema": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "prompt"
+        ],
+        "properties": {
+          "prompt": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 2000
+          }
+        }
+      },
+      "defaults": {},
+      "estimated_cost_microusd": 0,
+      "enabled": false
+    }
+  }
+}

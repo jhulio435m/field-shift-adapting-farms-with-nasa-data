@@ -1,0 +1,3238 @@
+openapi: 3.1.0
+info:
+  title: Kusi Kusi API
+  version: 0.1.0
+  description: Multi-tenant integration API and loopback-only local product workspace. Local mutations require role authorization and CSRF; no external publication occurs in local mode. Verified channel bindings can opt into registered adaptive loopback GraphQL reads; message text cannot select identity, credentials or destinations.
+servers:
+  - url: http://127.0.0.1:8080
+paths:
+  /v1/auth/mode:
+    get:
+      summary: Report whether the server runs the local workspace or admin control plane
+      security: []
+      responses:
+        '200': {description: Mode and OIDC availability; no-store}
+  /v1/admin/auth/oidc/start:
+    get:
+      summary: Start configured admin OIDC authorization
+      description: Admin control plane only. Uses server-generated state, nonce and PKCE; redirects only to the configured issuer. The fixed Next proxy preserves Location and Set-Cookie without following upstream redirects.
+      security: []
+      responses:
+        '307': {description: Redirect to the configured identity provider; sets short-lived HttpOnly transaction cookie}
+        '404': {description: OIDC is unavailable in local mode}
+        '503': {description: OIDC is not configured or unavailable}
+  /v1/admin/auth/oidc/callback:
+    get:
+      summary: Complete the one-use admin OIDC transaction
+      description: Callback failures redirect to /admin?error=login_failed. Identity must already be provisioned.
+      security: []
+      parameters:
+        - {name: code, in: query, schema: {type: string}}
+        - {name: state, in: query, required: true, schema: {type: string}}
+        - {name: iss, in: query, schema: {type: string}}
+      responses:
+        '307': {description: Redirect to /admin; success sets an HttpOnly admin session cookie}
+  /v1/admin/auth/session:
+    get:
+      summary: Get current provisioned admin memberships and CSRF token
+      security: [{AdminSession: []}]
+      responses:
+        '200':
+          description: Active memberships, CSRF token and session expiry; no-store
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [memberships, csrf_token, expires_at]
+                properties:
+                  memberships: {type: array, items: {type: object}}
+                  csrf_token: {type: string}
+                  expires_at: {type: integer}
+        '401': {description: Missing, expired or revoked session}
+  /v1/admin/auth/logout:
+    post:
+      summary: Revoke the current admin session
+      security: [{AdminSession: []}]
+      parameters:
+        - {name: Origin, in: header, required: true, schema: {type: string}}
+        - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Session revoked and cookie cleared}
+        '403': {description: Origin or CSRF validation failed}
+  /local/auth/login:
+    post:
+      summary: Start an eight-hour HttpOnly local session
+      security: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - organization
+              - username
+              - password
+              properties:
+                organization: &id001
+                  type: string
+                username: *id001
+                password:
+                  type: string
+                  format: password
+  /local/auth/session:
+    get:
+      summary: Get current local identity and CSRF token
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+  /local/auth/logout:
+    post:
+      summary: Revoke session and clear cookie
+      security:
+      - LocalSession: []
+      responses:
+        '204':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+  /v1/local/bootstrap:
+    post:
+      summary: 'Headless admin plus tenant key: create first local owner'
+      security:
+      - AdminKey: []
+        TenantBearer: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - username
+              - display_name
+              - password
+              properties:
+                username: *id001
+                display_name: *id001
+                password: *id001
+  /v1/local/overview:
+    get:
+      summary: List tenant-scoped overview
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+  /v1/demo/payments:
+    get:
+      summary: List the fixed synthetic payment records for the local no-login demo
+      description: Available only when local mode is enabled and loopback-only. Contains no real student identity or payment data.
+      responses:
+        '200': {description: Payments returned by the local payment-platform clone; each payment includes voucher_use (available, used, review_required), independently of payment_state}
+        '404': {description: Local demo mode is disabled}
+  /v1/demo/payments/by-dni:
+    post:
+      summary: Demonstrate payment-history lookup with the fixed synthetic DNI
+      description: Loopback-only demo accepts DNI 70000001 (payments) and 70000002 (empty payment history) and returns a masked synthetic identity; unknown DNI returns 404. This is not authentication and must never be used for real student records.
+      parameters:
+      - {name: Origin, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [dni]
+              properties: {dni: {type: string, pattern: '^[0-9]{8}$'}}
+      responses:
+        '200': {description: Synthetic student identity with masked DNI and payment history}
+        '400': {description: Malformed DNI}
+        '403': {description: Origin mismatch}
+        '404': {description: DNI not present in the synthetic clone or local demo disabled}
+  /v1/demo/payments/validate:
+    post:
+      summary: Validate a payment or receipt code against the local platform clone
+      description: Read-only lookup of synthetic records. Requires same-origin browser request; no credentials or student identifier are accepted.
+      parameters:
+      - {name: Origin, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [code]
+              properties: {code: {type: string, minLength: 1, maxLength: 40}}
+      responses:
+        '200': {description: Matching synthetic payment record}
+        '400': {description: Invalid code}
+        '403': {description: Origin mismatch}
+        '404': {description: Code not present in the clone}
+  /v1/demo/payments/validate-receipt:
+    post:
+      summary: OCR a receipt photo locally and validate its reference in the platform clone
+      description: Loopback-only demo. Accepts PNG, JPEG or WebP up to 5 MiB; OCR runs locally in memory. The photo and full OCR text are not persisted or returned.
+      parameters:
+      - {name: Origin, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          image/png: {schema: {type: string, format: binary}}
+          image/jpeg: {schema: {type: string, format: binary}}
+          image/webp: {schema: {type: string, format: binary}}
+      responses:
+        '200': {description: Detected synthetic reference matched to a payment record}
+        '400': {description: Invalid or oversized image}
+        '403': {description: Origin mismatch}
+        '404': {description: Receipt reference not found in the clone}
+        '415': {description: Unsupported media type}
+        '422': {description: No receipt reference detected}
+  /v1/local/cases:
+    get:
+      summary: List synthetic cases accessible to the authenticated local user
+      security: [{LocalSession: []}]
+      responses:
+        '200': {description: Tenant scoped cases for requester or assigned staff}
+        '401': {description: Local authentication required}
+  /v1/local/cases/{id}:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: Read a tenant scoped case and its attributed history
+      security: [{LocalSession: []}]
+      responses:
+        '200': {description: Synthetic case with masked payment reference}
+        '403': {description: User is not the requester or assigned staff}
+        '404': {description: Case not found in authenticated tenant}
+  /v1/local/cases/{id}/sources:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: List source excerpts and version status for the case
+      security: [{LocalSession: []}]
+      responses:
+        '200': {description: Sources include official URL, page and validity status}
+        '404': {description: Case not found in authenticated tenant}
+  /v1/local/cases/{id}/guidance:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Build source grounded guidance using deterministic demo or configured loopback model
+      description: No tools, paid providers, external sends or decisions. Payment validity remains for UNCP confirmation.
+      security: [{LocalSession: []}]
+      parameters:
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [question]
+              properties: {question: {type: string, minLength: 1, maxLength: 1200}}
+      responses:
+        '200': {description: Guidance with citations and explicit source status}
+        '403': {description: Role or CSRF denied}
+  /v1/local/cases/{id}/requests:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Create or revise the request draft for the case requester
+      security: [{LocalSession: []}]
+      parameters:
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [recipient_unit, body, include_receipt_fixture]
+              properties:
+                recipient_unit: {type: string, minLength: 1, maxLength: 120}
+                body: {type: string, minLength: 1, maxLength: 4000}
+                include_receipt_fixture: {type: boolean}
+      responses:
+        '200': {description: Versioned private draft; edits revoke prior consent}
+        '403': {description: Requester or CSRF check failed}
+  /v1/local/cases/{id}/requests/{request_id}/approve:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: request_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Approve the exact draft version and record explicit sharing consent
+      security: [{LocalSession: []}]
+      parameters:
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [version, digest, confirm_share]
+              properties:
+                version: {type: integer, minimum: 1}
+                digest: {type: string, minLength: 64, maxLength: 64}
+                confirm_share: {type: boolean, const: true}
+      responses:
+        '200': {description: Approved version and consent record}
+        '409': {description: Draft version or digest changed}
+  /v1/local/cases/{id}/requests/{request_id}/simulate-send:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    - {name: request_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Record a local simulated send after consent
+      description: Does not contact ADESA, email, channels or any external service.
+      security: [{LocalSession: []}]
+      parameters:
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Idempotent local simulation receipt}
+        '403': {description: No active consent for this version}
+  /v1/local/cases/{id}/responses:
+    parameters:
+    - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Record an attributed staff response on an assigned case
+      security: [{LocalSession: []}]
+      parameters:
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [response_type, body, citation_keys]
+              properties:
+                response_type: {type: string, enum: [request_information, guidance, referral, institutional_decision]}
+                body: {type: string, minLength: 1, maxLength: 4000}
+                citation_keys: {type: array, maxItems: 8, items: {type: string}}
+      responses:
+        '200': {description: Response attributed to authenticated staff user}
+        '403': {description: Assigned approver role required}
+  /v1/local/activity:
+    get:
+      summary: List tenant-scoped activity
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+  /v1/local/connection-settings:
+    get:
+      summary: List owner-managed Plane, Frappe and Telegram configuration
+      description: Loopback workspace only. Tenant and actor come from the verified local session. Owner-only response contains public metadata and credential field names, never ciphertext or credential values. Saved profiles are not active runtime configuration.
+      security: [{LocalSession: []}]
+      responses:
+        '200':
+          description: Private no-store list of configuration summaries
+          content:
+            application/json:
+              schema:
+                type: array
+                items: {$ref: '#/components/schemas/ManagedConnectionSummary'}
+        '401': {description: "Missing or revoked session"}
+        '403': {description: "Owner role required"}
+        '503': {description: "Storage unavailable"}
+  /v1/local/connection-settings/{kind}:
+    parameters:
+      - {name: kind, in: path, required: true, schema: {type: string, enum: [plane, frappe, telegram]}}
+    put:
+      summary: Save or rotate a private connection configuration
+      description: Owner and CSRF required; a supplied Origin must match the workspace. Secrets are write-only, encrypted with tenant/profile/kind/revision AAD and never echoed, including malformed input errors. Empty or omitted credential fields retain existing values. Telegram gets a server-generated webhook secret when first saving a bot token without one. expected_revision must be null/omitted for creation and match the current revision for editing. Saving does not test credentials, activate runtime adapters, register webhooks or send messages. Input limit 32 KiB.
+      security: [{LocalSession: []}]
+      parameters:
+        - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: '#/components/schemas/ManagedConnectionInput'}
+      responses:
+        '200':
+          description: Configuration saved and audited atomically; secret-free no-store summary
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagedConnectionSummary'}
+        '400': {description: "Invalid endpoint, adapter or credential format"}
+        '401': {description: "Session required"}
+        '403': {description: "Owner role, same Origin or CSRF check failed"}
+        '409': {description: "Revision conflict; reload before editing"}
+        '413': {description: "Request exceeds body limit"}
+        '422': {description: "Malformed or unknown fields; generic response without submitted values"}
+        '503': {description: "Storage or credential decryption unavailable; no update committed"}
+  /v1/local/connection-settings/{kind}/credentials:
+    parameters:
+      - {name: kind, in: path, required: true, schema: {type: string, enum: [plane, frappe, telegram]}}
+    delete:
+      summary: Explicitly clear saved credentials while retaining public metadata
+      description: Owner and CSRF required. A supplied Origin must match the workspace. Removes encrypted credentials, increments revision and audits in one transaction. Does not revoke a token at the provider or modify active legacy channels.
+      security: [{LocalSession: []}]
+      parameters:
+        - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [expected_revision]
+              properties:
+                expected_revision: {type: integer, minimum: 1}
+      responses:
+        '200':
+          description: Secret-free summary with no credentials present
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagedConnectionSummary'}
+        '401': {description: "Session required"}
+        '403': {description: "Owner role, Origin or CSRF check failed"}
+        '409': {description: "Missing profile or revision conflict"}
+        '422': {description: "Malformed input without echoed values"}
+        '503': {description: "Storage unavailable"}
+  /v1/local/settings:
+    get:
+      summary: List tenant-scoped settings
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+  /v1/local/sessions:
+    get:
+      summary: List active local sessions visible to the authenticated account
+      description: Users see only their sessions; owners see only sessions in their organization. Returns management IDs and dates, never credentials or transport metadata.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Active sessions with current-session marker
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [sessions]
+                properties:
+                  sessions:
+                    type: array
+                    items:
+                      type: object
+                      required: [id, user_id, display_name, username, created_at, expires_at, current]
+                      properties:
+                        id: {type: string, format: uuid}
+                        user_id: {type: string, format: uuid}
+                        display_name: *id001
+                        username: *id001
+                        created_at: {type: integer, format: int64}
+                        expires_at: {type: integer, format: int64}
+                        current: {type: boolean}
+        '401': {description: Local authentication required}
+        '503': {description: Session store unavailable}
+  /v1/local/sessions/{id}:
+    delete:
+      summary: Revoke one older local session
+      description: Users may revoke their own other sessions; owners may revoke another session in the same organization. The current session must use logout.
+      security:
+      - LocalSession: []
+      parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Session and linked credential revoked atomically}
+        '401': {description: Local authentication required}
+        '403': {description: CSRF, Origin, or role denied}
+        '404': {description: Active session not found in permitted scope}
+        '409': {description: Current session must be ended through logout}
+        '503': {description: Session store unavailable; no partial success}
+  /v1/local/users:
+    get:
+      summary: List tenant-scoped users
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+    post:
+      summary: Create organization user (owner only)
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - username
+              - display_name
+              - password
+              - role
+              properties:
+                username: *id001
+                display_name: *id001
+                password: *id001
+                role: &id003
+                  type: string
+                  enum:
+                  - owner
+                  - editor
+                  - approver
+                  - viewer
+  /v1/local/assets:
+    get:
+      summary: List tenant-scoped assets
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+    post:
+      summary: Upload validated image/video (max 10 MiB)
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: filename
+        in: query
+        required: true
+        schema:
+          type: string
+      - name: label
+        in: query
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema:
+              type: string
+              format: binary
+  /v1/local/conversations:
+    get:
+      summary: List tenant-scoped conversations
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+    post:
+      summary: Create local conversation
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - title
+              properties:
+                title: *id001
+  /v1/local/publications:
+    get:
+      summary: List tenant-scoped publications
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+    post:
+      summary: Create simulated publication draft
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: &id004
+              type: object
+              additionalProperties: false
+              required:
+              - asset_id
+              - platform
+              - caption
+              - privacy
+              - scheduled_at
+              - idempotency_key
+              properties:
+                asset_id: &id002
+                  type: string
+                  format: uuid
+                platform:
+                  type: string
+                  enum:
+                  - instagram
+                  - facebook
+                  - tiktok
+                caption: *id001
+                privacy:
+                  type: string
+                  enum:
+                  - private
+                  - friends
+                  - public
+                scheduled_at:
+                  type:
+                  - integer
+                  - 'null'
+                idempotency_key: *id002
+  /v1/local/workspaces:
+    get:
+      summary: List tenant-scoped workspaces
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+    post:
+      summary: 'Platform administrator: create workspace and first owner'
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - name
+              - slug
+              - username
+              - display_name
+              - password
+              properties:
+                name: *id001
+                slug: *id001
+                username: *id001
+                display_name: *id001
+                password: *id001
+  /v1/local/users/{id}:
+    patch:
+      summary: Change role or disable user and revoke sessions
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - role
+              - disabled
+              properties:
+                role: *id003
+                disabled: &id005
+                  type: boolean
+  /v1/local/users/{id}/password:
+    post:
+      summary: Reset password and revoke sessions
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - password
+              properties:
+                password: *id001
+  /v1/local/assets/{id}:
+    get:
+      summary: Get asset metadata
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    delete:
+      summary: Delete unreferenced asset
+      security:
+      - LocalSession: []
+      responses:
+        '204':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/local/assets/{id}/content:
+    get:
+      summary: Download private tenant-scoped asset bytes
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/local/conversations/{id}/messages:
+    get:
+      summary: Get messages and pending count
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    post:
+      summary: Persist idempotent message for debounced processing
+      security:
+      - LocalSession: []
+      responses:
+        '202':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - content
+              - asset_id
+              - client_id
+              properties:
+                content: *id001
+                asset_id:
+                  anyOf:
+                  - *id002
+                  - type: 'null'
+                client_id: *id002
+  /v1/local/link-codes:
+    post:
+      summary: Issue a one-use channel-bound identity link code
+      description: Owners may optionally issue the code to an enabled viewer in the same organization. The plaintext code is returned once and never logged.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - channel_id
+              properties:
+                channel_id: *id002
+                user_id:
+                  type: string
+                  format: uuid
+                  description: Optional target viewer UUID; owner only and tenant scoped.
+  /v1/local/resource-access/resources:
+    get:
+      summary: List synthetic resources visible to the authenticated local user
+      security:
+      - LocalSession: []
+      responses:
+        '200': {description: Fixed fixture catalog filtered to active grants}
+        '401': {description: Local authentication required}
+  /v1/local/resource-access/grants:
+    get:
+      summary: List current resource grants
+      description: Owner-only and limited to the organization from the verified session.
+      security:
+      - LocalSession: []
+      responses:
+        '200': {description: Active resource grants}
+        '403': {description: Owner role required}
+    post:
+      summary: Grant a viewer read access to one synthetic resource
+      description: Owner attests that authorization was checked outside the system. Repeated grants are idempotent.
+      security:
+      - LocalSession: []
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: {type: string}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user_id, resource_ref, authorization_verified]
+              properties:
+                user_id: *id002
+                resource_ref: {type: string, enum: [demo-resource-001, demo-resource-002]}
+                authorization_verified: {type: boolean, const: true}
+      responses:
+        '201': {description: Grant created or already present}
+        '400': {description: Invalid resource or missing verification attestation}
+        '403': {description: Owner role or CSRF denied}
+        '404': {description: Enabled same-organization viewer not found}
+  /v1/local/resource-access/grants/{user_id}/{resource_ref}:
+    delete:
+      summary: Revoke one synthetic resource grant
+      security:
+      - LocalSession: []
+      parameters:
+      - {name: user_id, in: path, required: true, schema: *id002}
+      - {name: resource_ref, in: path, required: true, schema: {type: string, enum: [demo-resource-001, demo-resource-002]}}
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      responses:
+        '204': {description: Grant revoked}
+        '403': {description: Owner role or CSRF denied}
+        '404': {description: Grant not found in this organization}
+  /v1/local/resource-access/execute:
+    post:
+      summary: Read one resource after session-bound authorization
+      description: Fixed read-only fixture capability; tenant and actor come from the verified session. Results are simulated.
+      security:
+      - LocalSession: []
+      parameters:
+      - {name: x-csrf-token, in: header, required: true, schema: {type: string}}
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [resource_ref]
+              properties:
+                resource_ref: {type: string, enum: [demo-resource-001, demo-resource-002]}
+      responses:
+        '200': {description: Authorized synthetic resource with simulated=true}
+        '422': {description: Unknown identity, tenant, or other request field rejected}
+        '403': {description: No active grant for this user and resource}
+        '404': {description: Unknown resource or local workspace unavailable}
+        '503': {description: Authorization store unavailable; request failed closed}
+  /v1/local/resource-access/audit:
+    get:
+      summary: List payload-free resource authorization decisions
+      description: Owner-only audit metadata; request arguments and result values are never stored.
+      security:
+      - LocalSession: []
+      responses:
+        '200': {description: Recent authorization events}
+        '403': {description: Owner role required}
+  /v1/local/academic/demo-students:
+    get:
+      summary: List fixed fictional academic students for the local demo
+      description: Owner-only local fixture. Contains no real school data and is unavailable outside local mode.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Fictional demo roster
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [student_ref, display_label, level]
+                  properties:
+                    student_ref: *id001
+                    display_label: *id001
+                    level: *id001
+        '401': {description: Local authentication required}
+        '403': {description: Owner role required}
+        '404': {description: Local workspace unavailable}
+  /v1/local/academic/guardian-links:
+    get:
+      summary: List local guardian links to fictional students
+      description: Owner-only, scoped to the authenticated organization.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Guardian links
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  type: object
+                  required: [user_id, user_name, student_ref, student_label, created_at]
+                  properties:
+                    user_id: *id002
+                    user_name: *id001
+                    student_ref: *id001
+                    student_label: *id001
+                    created_at:
+                      type: integer
+                      format: int64
+        '401': {description: Local authentication required}
+        '403': {description: Owner role required}
+    post:
+      summary: Link a same-organization viewer to a fictional student
+      description: Requires an owner attestation that the relationship was verified outside Kusi Kusi. Accepts no identity documents or real student data.
+      security:
+      - LocalSession: []
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [user_id, student_ref, relationship_verified]
+              properties:
+                user_id: *id002
+                student_ref: *id001
+                relationship_verified:
+                  type: boolean
+                  const: true
+      responses:
+        '201': {description: Link created or already present}
+        '400': {description: Invalid fixture or missing verification attestation}
+        '401': {description: Local authentication required}
+        '403': {description: Owner role or CSRF denied}
+        '404': {description: Viewer or fixture not found in this organization}
+  /v1/local/academic/guardian-links/{user_id}/{student_ref}:
+    delete:
+      summary: Remove a guardian link to a fictional student
+      security:
+      - LocalSession: []
+      parameters:
+      - name: user_id
+        in: path
+        required: true
+        schema: *id002
+      - name: student_ref
+        in: path
+        required: true
+        schema: *id001
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      responses:
+        '204': {description: Link removed}
+        '401': {description: Local authentication required}
+        '403': {description: Owner role or CSRF denied}
+        '404': {description: Link not found in this organization}
+  /v1/local/publications/{id}:
+    get:
+      summary: Get exact publication revision
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+    patch:
+      summary: Edit publication and invalidate previous approval
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: *id004
+  /v1/local/publications/{id}/approve:
+    post:
+      summary: Approve digest-bound version for local simulation
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - confirm
+              - approval_digest
+              properties:
+                confirm: *id005
+                approval_digest: *id001
+  /v1/local/publications/{id}/cancel:
+    post:
+      summary: Cancel publication before simulated execution
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      - name: id
+        in: path
+        required: true
+        schema:
+          type: string
+          format: uuid
+  /v1/local/retention/preview:
+    post:
+      summary: Owner-only preview of message retention
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - days
+              properties:
+                days:
+                  type: integer
+                  minimum: 1
+                  maximum: 3650
+                confirm: *id005
+  /v1/local/retention/apply:
+    post:
+      summary: Owner-only apply of message retention
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Local authentication required
+        '403':
+          description: Role or CSRF denied
+        '404':
+          description: Tenant-scoped resource not found
+        '409':
+          description: State changed, expired approval, or conflicting idempotency key
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema:
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required:
+              - days
+              - confirm
+              properties:
+                days:
+                  type: integer
+                  minimum: 1
+                  maximum: 3650
+                confirm: *id005
+  /v1/oauth/{provider}/start:
+    parameters:
+      - {name: provider, in: path, required: true, schema: {type: string, enum: [facebook, instagram, tiktok, simulated]}}
+    post:
+      summary: Begin tenant social OAuth authorization with browser-bound state
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200':
+          description: Authorization URL and expires_in; sets Secure HttpOnly SameSite=Lax browser cookie; Cache-Control no-store
+        '404': {description: Provider not configured for authenticated tenant}
+  /v1/oauth/{provider}/callback:
+    parameters:
+      - {name: provider, in: path, required: true, schema: {type: string}}
+    get:
+      summary: Consume OAuth state and exchange authorization code server-side
+      description: Requires the browser cookie from start; tenant and initiator come from the persisted session. Tokens never appear in the response.
+      parameters:
+        - {name: state, in: query, required: true, schema: {type: string, minLength: 43, maxLength: 43}}
+        - {name: code, in: query, schema: {type: string}}
+        - {name: error, in: query, schema: {type: string}}
+      responses:
+        '200': {description: Social connection metadata; no access or refresh token}
+        '400': {description: Denied consent or invalid callback}
+        '403': {description: Missing browser binding, replayed, expired or mismatched state}
+        '409': {description: Account belongs to another organization or operation is busy}
+        '502': {description: Provider exchange failed; start a new authorization attempt}
+  /v1/oauth/connections:
+    get:
+      summary: List up to 100 social connections of the authenticated tenant
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Metadata, scopes, lifecycle state and expiry; no credentials}
+  /v1/oauth/connections/{id}/refresh:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Refresh a TikTok or eligible Instagram connection atomically
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Refreshed; replacement credentials encrypted on server}
+        '404': {description: Connection not found in authenticated tenant}
+        '409': {description: Busy, needs reauthorization, Facebook login required or Instagram refresh too early}
+        '502': {description: Uncertain or failed refresh; reauthorization required}
+  /v1/oauth/connections/{id}/disconnect:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Disable local connection and request remote revocation where supported
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Revocation confirmed; stored token ciphertext deleted}
+        '202': {description: Local access disabled; remote revocation pending or manual, including Instagram}
+        '404': {description: Connection not found in authenticated tenant}
+        '409': {description: Connection busy or already disconnected}
+  /v1/creative/recipes:
+    get:
+      summary: List enabled tenant creative recipes and worker state
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Recipes with input schemas, defaults and reviewed cost estimates}
+  /v1/creative/budget:
+    get:
+      summary: Get UTC daily approval budget and reserved estimate
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Daily limit and reserved estimated amounts in micro-USD}
+    post:
+      summary: Set daily approval budget; zero by default
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [daily_limit_microusd]
+              properties:
+                daily_limit_microusd: {type: integer, minimum: 0, maximum: 1000000000}
+      responses:
+        '204': {description: Budget saved and change audited}
+  /v1/creative/jobs:
+    get:
+      summary: List the latest 50 creative jobs of the authenticated tenant
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Tenant jobs}
+    post:
+      summary: Create immutable generation proposal without contacting the media provider
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [recipe, input, idempotency_key]
+              properties:
+                recipe: {type: string}
+                input: {type: object}
+                idempotency_key: {type: string, format: uuid}
+      responses:
+        '201': {description: Awaiting-approval job including frozen parameters, expiry and approval digest; idempotent repeats return the same job}
+        '400': {description: Invalid recipe input}
+        '404': {description: Recipe not configured for this tenant}
+        '409': {description: Idempotency key reused with changed parameters}
+  /v1/creative/jobs/{id}:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: Get creative job state, provider request id and result assets
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Job state; simulated results are explicitly labeled}
+        '404': {description: Job not found in authenticated tenant}
+  /v1/creative/jobs/{id}/approve:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Approve exact proposal and reserve its estimate against the daily budget
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [confirm, approval_digest, max_cost_microusd]
+              properties:
+                confirm: {type: boolean, const: true}
+                approval_digest: {type: string, minLength: 64, maxLength: 64}
+                max_cost_microusd: {type: integer, minimum: 0}
+      responses:
+        '200': {description: Approved or previously approved job; no duplicate submission}
+        '409': {description: Expired or changed proposal, insufficient budget or incompatible state}
+  /v1/creative/jobs/{id}/cancel:
+    parameters:
+      - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Cancel a draft or approved job before dispatch; never implies remote cancellation
+      security: [{AdminKey: [], TenantBearer: []}]
+      responses:
+        '200': {description: Canceled before provider submission}
+        '409': {description: Submission started or job is terminal}
+  /v1/ai/generate:
+    post:
+      summary: Operator inference using an authorized tenant profile
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [profile, request]
+              properties:
+                profile: {type: string}
+                request:
+                  type: object
+                  required: [instructions, input]
+                  properties:
+                    instructions: {type: string}
+                    input: {type: string}
+                    tools: {type: array, items: {type: object}}
+      responses:
+        '200': {description: Normalized text and proposed tool calls; no tools executed}
+        '400': {description: Invalid or unsupported request}
+        '403': {description: Tenant profile unavailable}
+        '503': {description: Provider failure or rejected response}
+  /v1/ai/transcribe:
+    post:
+      summary: Transcribe uploaded audio using a separate tenant audio profile
+      security: [{AdminKey: [], TenantBearer: []}]
+      parameters:
+        - {name: profile, in: query, required: true, schema: {type: string}}
+        - {name: filename, in: query, required: true, schema: {type: string}}
+        - {name: language, in: query, schema: {type: string, minLength: 2, maxLength: 2}}
+      requestBody:
+        required: true
+        content:
+          application/octet-stream:
+            schema: {type: string, format: binary, description: Audio file bytes; maximum 10 MiB}
+      responses:
+        '200': {description: Transcript and configured model}
+        '400': {description: Invalid audio metadata}
+        '403': {description: Tenant profile unavailable}
+        '413': {description: Audio exceeds 10 MiB}
+        '503': {description: Provider failure}
+  /webhooks/{channel_id}:
+    parameters:
+      - {name: channel_id, in: path, required: true, schema: {type: string, format: uuid}}
+    get:
+      summary: Meta webhook verification challenge
+      parameters:
+        - {name: hub.mode, in: query, required: true, schema: {type: string}}
+        - {name: hub.verify_token, in: query, required: true, schema: {type: string}}
+        - {name: hub.challenge, in: query, required: true, schema: {type: string}}
+      responses:
+        '200': {description: Original challenge}
+        '403': {description: Invalid verification token}
+    post:
+      summary: Authenticated Meta or Telegram event receipt into durable inbox
+      description: Meta requires X-Hub-Signature-256 on original bytes; Telegram requires X-Telegram-Bot-Api-Secret-Token. Organization comes from registered server channel configuration.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {type: object}
+      responses:
+        '200': {description: Supported events committed or duplicate acknowledged}
+        '401': {description: Invalid webhook authentication}
+        '403': {description: Event targets another registered number}
+        '503': {description: Persistence unavailable; retry later}
+  /v1/channels/{channel_id}/send:
+    parameters:
+      - {name: channel_id, in: path, required: true, schema: {type: string, format: uuid}}
+    post:
+      summary: Operator text dispatch through official provider API
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [recipient, text]
+              properties:
+                recipient: {type: string}
+                text: {type: string, minLength: 1, maxLength: 4096}
+                graph_version: {type: string, description: Required for WhatsApp}
+      responses:
+        '200': {description: Provider acceptance response; not delivery confirmation}
+        '403': {description: Tenant does not own this channel}
+        '502': {description: Provider failure; no automatic retry}
+        '503': {description: Channel token not configured}
+  /v1/capabilities/execute:
+    post:
+      summary: Execute a permitted tenant capability using its registered connector
+      description: |
+        Tenant identity is resolved exclusively from the verified service key.
+        An adapter protected by external_resource_policies additionally requires
+        a live operator-verified identity link and a live exact resource grant
+        bound to that credential, adapter, capability and version. For these
+        adapters input is exactly {resource_ref: string}; no other fields are
+        accepted. The registered output must be {resource_ref, data} with the
+        same resource_ref. Missing/revoked/expired access returns 403; malformed
+        scope or mismatched output returns 400; policy storage failure returns
+        503. No external subject or tenant can be selected by input. This is
+        manual provisioning, not live verification of provider permissions.
+        Capabilities, exact permission grants and payload-free start/terminal audit
+        events are persisted in PostgreSQL. Execution is blocked in local mode.
+        In addition to configured generic HTTPS JSON connectors, explicitly
+        provisioned server profiles support frappe_identity, plane_identity and
+        wppconnect_health. Built-in reads accept only an empty input object and
+        return normalized status without credentials, cookies or identity fields.
+        URLs, hosts, credentials and profile selection cannot be supplied by the
+        caller. WPPConnect health is not authenticated WhatsApp connectivity or
+        message delivery. These adapters perform no business writes or sends.
+      security: [{TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [identifier, version, input]
+              properties:
+                identifier: {type: string, maxLength: 120}
+                version: {type: string, maxLength: 32}
+                input: {description: "Validated against registered input_schema. Protected resource adapters require exactly resource_ref (nonempty string up to 255 UTF-8 bytes). Built-in identity/health reads require an empty object."}
+      responses:
+        '200':
+          description: Structured connector result committed to audit before return
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [capability, version, source, data]
+                properties:
+                  capability: {type: string}
+                  version: {type: string}
+                  source: {type: string, const: configured_http_connector}
+                  data: {description: "Registered output_schema. Protected resource adapters return an exact envelope with resource_ref matching the request and data. Built-in reads expose kind, reachable and authenticated, plus workspace_count for Plane."}
+        '400': {description: Invalid input or connector output}
+        '401': {description: Missing, invalid, expired or revoked tenant key}
+        '403': {description: Local mode, disabled or unknown capability, permission or destination denied}
+        '422': {description: Malformed execution envelope or unrecognized fields such as tenant ids or credentials}
+        '503': {description: Connector, registry or audit unavailable; audit failure prevents successful return}
+  /v1/capabilities/grants:
+    post:
+      summary: Grant an exact permission to the authenticated tenant key
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [permission]
+              properties:
+                permission: {type: string, minLength: 1, maxLength: 120}
+      responses:
+        '204': {description: Permission granted}
+        '401': {description: Unauthorized}
+  /v1/capabilities:
+    get:
+      summary: List capabilities of authenticated tenant
+      security: [{TenantBearer: []}]
+      responses:
+        '200': {description: Capability metadata}
+        '401': {description: Unauthorized}
+    post:
+      summary: Register or update tenant capability metadata
+      security: [{AdminKey: [], TenantBearer: []}]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [identifier, version, description, adapter, required_permission, enabled, timeout_ms, input_schema, output_schema]
+              additionalProperties: false
+              properties:
+                operation: {type: string, enum: [read], default: read}
+                input_schema: {type: object}
+                output_schema: {type: object}
+                identifier: {type: string}
+                version: {type: string}
+                description: {type: string}
+                adapter: {type: string}
+                required_permission: {type: string}
+                enabled: {type: boolean}
+                timeout_ms: {type: integer, minimum: 100, maximum: 30000}
+      responses:
+        '204': {description: Metadata registered}
+        '400': {description: Invalid metadata}
+        '401': {description: Unauthorized}
+  /health/live:
+    get:
+      summary: Process liveness
+      responses:
+        '200': { description: Process is running }
+  /health/ready:
+    get:
+      summary: Database readiness
+      responses:
+        '200': { description: API and database are ready }
+        '503': { description: Database is unavailable }
+  /v1/organizations:
+    post:
+      summary: Create an organization
+      description: Requires the bootstrap admin key. The tenant API key is returned once.
+      security: [{ AdminKey: [] }]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [name, slug]
+              properties:
+                name: { type: string, minLength: 2, maxLength: 120 }
+                slug: { type: string, pattern: '^[a-z][a-z0-9-]{0,61}[a-z0-9]$' }
+      responses:
+        '201': { description: Organization and one-time tenant API key }
+        '401': { description: Invalid or missing admin key }
+        '409': { description: Slug already exists }
+  /v1/organizations/current:
+    get:
+      summary: Resolve organization from tenant API key
+      security: [{ TenantBearer: [] }]
+      responses:
+        '200': { description: Organization associated with authenticated key }
+        '401': { description: Invalid or missing tenant key }
+  /v1/local/connector-manifests:
+    get:
+      summary: List declarative connector versions and fields
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items:
+                  $ref: '#/components/schemas/ConnectorManifest'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+  /v1/local/connection-settings/{kind}/verify:
+    post:
+      summary: Verify an exact connection revision
+      description: Owner only. Provider verification and enable always return 403 in
+        local mode, before any network transport. Fixture verification checks saved
+        field presence only; it does not authenticate credentials or prove remote permissions.
+        Saving and rotation invalidate earlier verification. Disable is idempotent for
+        the current revision.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionVerification'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - &mi_path001
+        name: kind
+        in: path
+        required: true
+        schema:
+          type: string
+          enum:
+          - plane
+          - frappe
+          - telegram
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: &mi_path002
+          type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionVerifyInput'
+  /v1/local/connection-settings/{kind}/enable:
+    post:
+      summary: Enable an exact connection revision
+      description: Owner only. Provider verification and enable always return 403 in
+        local mode, before any network transport. Fixture verification checks saved
+        field presence only; it does not authenticate credentials or prove remote permissions.
+        Saving and rotation invalidate earlier verification. Disable is idempotent for
+        the current revision.
+      security:
+      - LocalSession: []
+      responses:
+        '204':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path001
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionLifecycleInput'
+  /v1/local/connection-settings/{kind}/disable:
+    post:
+      summary: Disable an exact connection revision
+      description: Owner only. Provider verification and enable always return 403 in
+        local mode, before any network transport. Fixture verification checks saved
+        field presence only; it does not authenticate credentials or prove remote permissions.
+        Saving and rotation invalidate earlier verification. Disable is idempotent for
+        the current revision.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionVerification'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path001
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ConnectionLifecycleInput'
+  /v1/local/connection-settings/{kind}/status:
+    get:
+      summary: Read verification of the current profile revision
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ConnectionVerification'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path001
+  /v1/local/channel-operations/telegram:
+    get:
+      summary: Inspect registered channel bindings without sender data
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ChannelOperationsSummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - &mi_path004
+        name: cursor
+        in: query
+        schema: &mi_path003
+          type: string
+          format: uuid
+        description: Exclusive UUID cursor; page maximum 50
+  /v1/local/channel-operations/telegram/bindings/{id}/revoke:
+    post:
+      summary: Revoke a binding and retained conversation context
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '204':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - &mi_path005
+        name: id
+        in: path
+        required: true
+        schema: *mi_path003
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/BindingRevisionInput'
+  /v1/local/managed-executions:
+    get:
+      summary: List own durable outbox executions
+      description: Authenticated actor; current ownership and permissions required.
+        Local workspace only; no-store; never activates providers. Organization comes
+        from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items:
+                  $ref: '#/components/schemas/ManagedExecutionSummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path004
+  /v1/local/managed-executions/{id}:
+    get:
+      summary: Read own sanitized execution timeline
+      description: Authenticated actor; current ownership and permissions required.
+        Local workspace only; no-store; never activates providers. Organization comes
+        from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedExecutionSummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path005
+  /v1/local/managed-executions/{id}/cancel:
+    post:
+      summary: Cancel the exact local outbox revision
+      description: Own execution only. Review additionally requires owner/approver role
+        and an awaiting_review proposal. Resume/review require the current proposal
+        digest; review requires approve/reject. Resume retains the existing queued operation
+        without another send. Uncertain effects cannot be resumed. Cancel on running
+        records a request and does not promise reversal. Message bodies and recipients
+        are not returned. Creative/publication approvals retain their separate contracts.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedExecutionSummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path005
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedExecutionInput'
+  /v1/local/managed-executions/{id}/resume:
+    post:
+      summary: Resume the exact local outbox revision
+      description: Own execution only. Review additionally requires owner/approver role
+        and an awaiting_review proposal. Resume/review require the current proposal
+        digest; review requires approve/reject. Resume retains the existing queued operation
+        without another send. Uncertain effects cannot be resumed. Cancel on running
+        records a request and does not promise reversal. Message bodies and recipients
+        are not returned. Creative/publication approvals retain their separate contracts.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedExecutionSummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path005
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedExecutionInput'
+  /v1/local/managed-executions/{id}/review:
+    post:
+      summary: Review the exact local outbox revision
+      description: Own execution only. Review additionally requires owner/approver role
+        and an awaiting_review proposal. Resume/review require the current proposal
+        digest; review requires approve/reject. Resume retains the existing queued operation
+        without another send. Uncertain effects cannot be resumed. Cancel on running
+        records a request and does not promise reversal. Message bodies and recipients
+        are not returned. Creative/publication approvals retain their separate contracts.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedExecutionSummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path005
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedExecutionInput'
+  /v1/local/integration-evaluations:
+    post:
+      summary: Run 24 deterministic synthetic cases; no model-quality claim
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationEvaluationCreated'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IntegrationEvaluationInput'
+  /v1/local/integration-evaluations/{id}:
+    get:
+      summary: Read a tenant-scoped synthetic evaluation result
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/IntegrationEvaluationResult'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path005
+  /v1/local/authorized-memories:
+    get:
+      summary: List own currently authorized demonstration-source memory
+      description: Authenticated actor; current ownership and permissions required.
+        Local workspace only; no-store; never activates providers. Organization comes
+        from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                type: array
+                maxItems: 50
+                items:
+                  $ref: '#/components/schemas/AuthorizedMemorySummary'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+  /v1/local/authorized-memories/preferences:
+    get:
+      summary: Read own explicit memory consent and TTL
+      description: Authenticated actor; current ownership and permissions required.
+        Local workspace only; no-store; never activates providers. Organization comes
+        from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/AuthorizedMemoryPreference'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+    put:
+      summary: Set own consent; opting out erases retained memory payload
+      description: Authenticated actor; current ownership and permissions required.
+        Local workspace only; no-store; never activates providers. Organization comes
+        from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '204':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/AuthorizedMemoryPreference'
+  /v1/local/authorized-memories/{id}:
+    delete:
+      summary: Erase own memory payload and exclude it from recovery
+      description: Authenticated actor; current ownership and permissions required.
+        Local workspace only; no-store; never activates providers. Organization comes
+        from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '204':
+          description: Successful local operation
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - *mi_path005
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+  /v1/local/policy-simulations:
+    post:
+      summary: Simulate current demonstration resource permission without grants mutation
+      description: Owner only. Local workspace only; no-store; never activates providers.
+        Organization comes from the session.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/PolicySimulationDecision'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/PolicySimulationInput'
+  /v1/local/managed-queries:
+    post:
+      summary: Execute a typed synthetic read using saved profile and 007 ACL
+      description: Fixture only. Requires a current simulated profile verification,
+        active session principal, registered capability, capability permission, verified
+        external identity link and exact resource grant. Never calls a provider or lets
+        a caller select organization or transport. The fixture dataset only exposes
+        fixture-a. Reauthorization occurs before reading and before returning evidence.
+      security:
+      - LocalSession: []
+      responses:
+        '200':
+          description: Successful local operation
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ManagedFixtureQueryResult'
+        '400':
+          description: Invalid input
+        '401':
+          description: Session required
+        '403':
+          description: Role, Origin/CSRF denied or local external operation blocked
+        '404':
+          description: Resource absent or inaccessible
+        '409':
+          description: Revision changed, expired, unreviewable or uncertain effect
+        '422':
+          description: Malformed lifecycle JSON without echoed values
+        '429':
+          description: Rate limited
+        '503':
+          description: Storage unavailable
+      parameters:
+      - name: x-csrf-token
+        in: header
+        required: true
+        schema: *mi_path002
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ManagedFixtureQueryInput'
+  /v1/local/managed-executions/{id}/proposal:
+    get:
+      summary: Read the exact local proposal before approval
+      description: Only the owning actor with owner/approver role. Requires awaiting_review and current registered binding for channel destinations. Provider-linked proposals are not reviewable through this local contract. Returns private content and destination solely for this necessary review; never in list or timeline.
+      security: [{LocalSession: []}]
+      parameters:
+        - {name: id, in: path, required: true, schema: {type: string, format: uuid}}
+      responses:
+        '200':
+          description: Private exact snapshot; no-store
+          content:
+            application/json:
+              schema: {$ref: '#/components/schemas/ManagedExecutionProposal'}
+        '401': {description: Session required}
+        '403': {description: Role denied}
+        '404': {description: Absent, inaccessible or unreviewable proposal}
+        '503': {description: Storage unavailable}
+components:
+  securitySchemes:
+    LocalSession:
+      type: apiKey
+      in: cookie
+      name: kusi_local_session
+      description: Local loopback mode only. Mutations also require x-csrf-token from session endpoint.
+
+    AdminSession:
+      type: apiKey
+      in: cookie
+      name: kusi_admin_session
+      description: Production admin control plane only. Logout mutations require same-origin Origin and x-csrf-token.
+
+    AdminKey:
+      type: apiKey
+      in: header
+      name: x-admin-key
+    TenantBearer:
+      type: http
+      scheme: bearer
+
+  schemas:
+    ManagedConnectionInput:
+      type: object
+      additionalProperties: false
+      required: [label]
+      properties:
+        label: {type: string, minLength: 2, maxLength: 120, description: "Public connection label; at most 120 UTF-8 bytes"}
+        base_url: {type: [string, 'null'], maxLength: 2048, description: "Required HTTPS origin for Plane/Frappe; no path, userinfo, query, fragment or IP host. Must be null/omitted for Telegram. Syntax validation does not verify DNS or provider connectivity."}
+        workspace: {type: [string, 'null'], maxLength: 120, description: "Optional Plane workspace slug; null/omitted for other kinds"}
+        bot_username: {type: [string, 'null'], maxLength: 32, description: "Optional Telegram bot username without @; null/omitted for other kinds"}
+        webhook_url: {type: [string, 'null'], maxLength: 2048, description: "Optional HTTPS webhook URL for Telegram; stored without registering it"}
+        expected_revision: {type: [integer, 'null'], minimum: 1}
+        credentials:
+          type: object
+          additionalProperties: false
+          writeOnly: true
+          description: Omitted or empty fields retain stored values. Only fields appropriate to the selected kind are accepted.
+          properties:
+            api_key: {type: string, maxLength: 4096, writeOnly: true, description: "Plane API key or Frappe API Key"}
+            api_secret: {type: string, maxLength: 4096, writeOnly: true, description: "Frappe API Secret"}
+            bot_token: {type: string, maxLength: 277, writeOnly: true, description: "Telegram bot token; numeric prefix and opaque secret"}
+            webhook_secret: {type: string, maxLength: 256, anyOf: [{maxLength: 0}, {minLength: 16}], writeOnly: true, description: "Telegram webhook secret; empty preserves existing value"}
+    ManagedConnectionSummary:
+      type: object
+      additionalProperties: false
+      required: [kind, label, base_url, workspace, bot_username, webhook_url, revision, credential_fields, configured, runtime_active, verification]
+      properties:
+        kind: {type: string, enum: [plane, frappe, telegram]}
+        label: {type: string}
+        base_url: {type: [string, 'null']}
+        workspace: {type: [string, 'null']}
+        bot_username: {type: [string, 'null']}
+        webhook_url: {type: [string, 'null']}
+        revision: {type: integer, minimum: 1}
+        credential_fields: {type: array, items: {type: string, enum: [api_key, api_secret, bot_token, webhook_secret]}, description: "Field names only; never values"}
+        configured: {type: boolean, description: "Required credential fields are present; not proof of authentication"}
+        runtime_active: {type: boolean, const: false}
+        verification: {type: string, const: not_verified}
+    ConnectionVerification:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - profile_revision
+      - adapter_version
+      - mode
+      - status
+      - checked_at
+      - expires_at
+      - scope_summary
+      - error_code
+      - runtime_active
+      properties:
+        id: &mi_schema003
+          type:
+          - string
+          - 'null'
+          format: uuid
+        profile_revision: &mi_schema002
+          type: integer
+          minimum: 1
+        adapter_version: &mi_schema001
+          type: string
+        mode:
+          type:
+          - string
+          - 'null'
+          enum:
+          - fixture
+          - provider
+          - null
+        status:
+          type: string
+          enum:
+          - not_verified
+          - pending
+          - verified
+          - failed
+          - stale
+        checked_at:
+          type:
+          - integer
+          - 'null'
+        expires_at:
+          type:
+          - integer
+          - 'null'
+        scope_summary: *mi_schema001
+        error_code: &mi_schema005
+          type:
+          - string
+          - 'null'
+        runtime_active:
+          type: boolean
+          const: false
+    ConnectorManifest:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - name
+      - version
+      - auth_fields
+      - operations
+      - input_schema
+      - output_schema
+      - required_scopes
+      - verification_probe
+      - timeout_ms
+      - max_concurrent_probes
+      properties:
+        kind: &mi_schema007
+          type: string
+          enum:
+          - plane
+          - frappe
+          - telegram
+        name: *mi_schema001
+        version:
+          type: string
+          const: '1'
+        auth_fields:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - name
+            - label
+            - secret
+            - required
+            properties:
+              name: *mi_schema001
+              label: *mi_schema001
+              secret:
+                type: boolean
+              required:
+                type: boolean
+        operations:
+          type: array
+          items: *mi_schema001
+        input_schema:
+          type: object
+        output_schema:
+          type: object
+        required_scopes:
+          type: array
+          items: *mi_schema001
+        verification_probe: *mi_schema001
+        timeout_ms:
+          type: integer
+          const: 10000
+        max_concurrent_probes:
+          type: integer
+          const: 1
+    ConnectionVerifyInput:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      - mode
+      properties:
+        expected_revision: *mi_schema002
+        mode:
+          type: string
+          enum:
+          - fixture
+          - provider
+    ConnectionLifecycleInput:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_revision
+      properties:
+        expected_revision: *mi_schema002
+        verification_id: *mi_schema003
+    ChannelBindingSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - user_id
+      - version
+      - expires_at
+      - revoked
+      properties:
+        id: &mi_schema004
+          type: string
+          format: uuid
+        user_id: *mi_schema004
+        version: *mi_schema002
+        expires_at: &mi_schema006
+          type: integer
+          format: int64
+        revoked:
+          type: boolean
+    ChannelOperationsSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - mode
+      - runtime_active
+      - bindings
+      properties:
+        mode:
+          type: string
+          const: local_no_delivery
+        runtime_active:
+          type: boolean
+          const: false
+        bindings:
+          type: array
+          maxItems: 50
+          items:
+            $ref: '#/components/schemas/ChannelBindingSummary'
+    BindingRevisionInput:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_version
+      properties:
+        expected_version: *mi_schema002
+    ManagedExecutionInput:
+      type: object
+      additionalProperties: false
+      required:
+      - expected_version
+      properties:
+        expected_version: *mi_schema002
+        proposal_digest: *mi_schema005
+        decision:
+          type:
+          - string
+          - 'null'
+          enum:
+          - approve
+          - reject
+          - null
+    ManagedExecutionSummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - version
+      - state
+      - mode
+      - proposal_digest
+      - updated_at
+      - timeline
+      properties:
+        id: *mi_schema004
+        version: *mi_schema002
+        state:
+          type: string
+          enum:
+          - pending
+          - running
+          - cancel_requested
+          - cancelled
+          - completed
+          - failed
+          - uncertain
+          - awaiting_review
+        mode:
+          type: string
+          const: local_no_delivery
+        proposal_digest:
+          type: string
+          pattern: ^[0-9a-f]{64}$
+        updated_at: *mi_schema006
+        timeline:
+          type: array
+          maxItems: 50
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - version
+            - state
+            - at
+            properties:
+              version: *mi_schema002
+              state: *mi_schema001
+              at: *mi_schema006
+    IntegrationEvaluationInput:
+      type: object
+      additionalProperties: false
+      required:
+      - suite_version
+      properties:
+        suite_version:
+          type: string
+          const: '1'
+    IntegrationEvaluationResult:
+      type: object
+      additionalProperties: false
+      required:
+      - suite_version
+      - mode
+      - passed
+      - total
+      - quality_evaluated
+      - cases
+      properties:
+        suite_version:
+          type: string
+        mode:
+          type: string
+          const: fixture
+        passed:
+          type: integer
+        total:
+          type: integer
+          const: 24
+        quality_evaluated:
+          type: boolean
+          const: false
+        cases:
+          type: array
+          minItems: 24
+          maxItems: 24
+          items:
+            type: object
+            additionalProperties: false
+            required:
+            - id
+            - kind
+            - expected
+            - actual
+            - passed
+            - evidence
+            - question
+            - fixture_version
+            properties:
+              id:
+                type: string
+              kind:
+                type: string
+              expected:
+                type: string
+              actual:
+                type: string
+              passed:
+                type: boolean
+              evidence:
+                type: array
+                items:
+                  type: string
+              question:
+                type: string
+              fixture_version:
+                type: string
+    AuthorizedMemoryPreference:
+      type: object
+      additionalProperties: false
+      required:
+      - consent
+      - ttl_seconds
+      properties:
+        consent:
+          type: boolean
+        ttl_seconds:
+          type: integer
+          minimum: 1
+          maximum: 604800
+    AuthorizedMemorySummary:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - source_ref
+      - expires_at
+      properties:
+        id: *mi_schema004
+        source_ref: *mi_schema001
+        expires_at: *mi_schema006
+    PolicySimulationInput:
+      type: object
+      additionalProperties: false
+      required:
+      - operation
+      - resource_reference
+      properties:
+        operation:
+          type: string
+          const: demo.resource.read
+        resource_reference:
+          type: string
+          maxLength: 255
+        subject_user_id: *mi_schema003
+    PolicySimulationDecision:
+      type: object
+      additionalProperties: false
+      required:
+      - allowed
+      - reason
+      - simulation
+      properties:
+        allowed:
+          type: boolean
+        reason:
+          type: string
+          enum:
+          - allowed
+          - not_authorized
+        simulation:
+          type: boolean
+          const: true
+    ManagedFixtureQueryInput:
+      type: object
+      additionalProperties: false
+      required:
+      - kind
+      - version
+      - operation
+      - input
+      - expected_revision
+      properties:
+        kind: *mi_schema007
+        version:
+          type: string
+          const: '1'
+        operation:
+          type: string
+          enum:
+          - plane.resource.read
+          - frappe.resource.read
+          - telegram.context.read
+        input:
+          type: object
+          additionalProperties: false
+          required:
+          - resource_ref
+          properties:
+            resource_ref:
+              type: string
+              minLength: 1
+              maxLength: 255
+        expected_revision: *mi_schema002
+    ManagedFixtureQueryResult:
+      type: object
+      additionalProperties: false
+      required:
+      - mode
+      - provider_active
+      - result
+      properties:
+        mode:
+          type: string
+          const: fixture
+        provider_active:
+          type: boolean
+          const: false
+        result:
+          type: object
+          additionalProperties: false
+          required:
+          - resource_ref
+          - evidence
+          properties:
+            resource_ref: *mi_schema001
+            evidence:
+              type: array
+              items: *mi_schema001
+    ManagedOperationError:
+      type: object
+      additionalProperties: false
+      required:
+      - code
+      - correlation_id
+      properties:
+        code: *mi_schema001
+        correlation_id: *mi_schema004
+    IntegrationEvaluationCreated:
+      type: object
+      additionalProperties: false
+      required:
+      - id
+      - result
+      properties:
+        id: *mi_schema004
+        result:
+          $ref: '#/components/schemas/IntegrationEvaluationResult'
+    ManagedExecutionProposal:
+      type: object
+      additionalProperties: false
+      required: [id, version, proposal_digest, operation, resource_ref, destination, content]
+      properties:
+        id: {type: string, format: uuid}
+        version: {type: integer, minimum: 1}
+        proposal_digest: {type: string, pattern: '^[0-9a-f]{64}$'}
+        operation: {type: string, const: local.message.deliver}
+        resource_ref: {type: string, format: uuid}
+        destination: {type: string, description: Private destination visible only for authorized review}
+        content: {type: string, description: Private exact content; never logged}

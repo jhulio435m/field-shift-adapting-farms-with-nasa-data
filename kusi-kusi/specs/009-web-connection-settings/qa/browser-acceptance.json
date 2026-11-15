@@ -1,0 +1,17 @@
+{
+  "status": "passed",
+  "checks": [
+    "create and reload Plane/ERP/Telegram profiles from web",
+    "write-only password fields and server-generated webhook secret",
+    "credential rotation and blank-edit preservation",
+    "stale tab conflict clears typed secrets",
+    "explicit credential clearing with confirmation",
+    "non-owner UI and API denial",
+    "desktop/mobile real Chromium with no horizontal overflow",
+    "no credentials in responses/HTML/localStorage",
+    "all browser traffic restricted to loopback"
+  ],
+  "screenshots": 4,
+  "external_calls": false,
+  "existing_database_used": false
+}
