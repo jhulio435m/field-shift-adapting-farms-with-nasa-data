@@ -602,37 +602,6 @@ export default function App() {
 
         {profile && (
           <>
-            {/* 3-Moment Decision Journey Strip + Transparent Data Source Legend */}
-            <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e3e6e1] bg-white px-4 py-2.5 text-xs">
-              <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
-                <span className="inline-flex items-center gap-2 font-semibold text-[#111813]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-xs font-bold text-white">
-                    1
-                  </span>
-                  {tr(language, 'Entender mi campo', 'Understand my field')}
-                </span>
-                <span className="inline-flex items-center gap-2 font-semibold text-[#111813]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-xs font-bold text-white">
-                    2
-                  </span>
-                  {tr(language, 'Comparar opciones', 'Compare rotations')}
-                </span>
-                <span className="inline-flex items-center gap-2 font-semibold text-[#111813]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-xs font-bold text-white">
-                    3
-                  </span>
-                  {tr(language, 'Comprender qué hacer', 'Understand what to do')}
-                </span>
-              </div>
-              <span className="font-mono text-xs text-[#475569]">
-                {tr(
-                  language,
-                  'NASA POWER 30a · Serie 2005–2024 · Sentinel-2 NDVI · Pronóstico 7d',
-                  'NASA POWER 30y · 2005–2024 Series · Sentinel-2 NDVI · 7d Forecast',
-                )}
-              </span>
-            </div>
-
             {/* Verified Contingency Snapshot Notice if external NASA POWER failed */}
             {isContingencySnapshot && (
               <div
@@ -663,7 +632,7 @@ export default function App() {
               </div>
             )}
 
-            {/* Top Field Selector + Side-by-Side Scenario Stress Comparator */}
+            {/* Top Field Selector + Scenario Stress Buttons */}
             <ParcelPanel
               language={language}
               profileName={profile.name}
@@ -675,8 +644,6 @@ export default function App() {
               parcelStatus={parcelStatus}
               rainDeltaPct={rainDeltaPct}
               tempDeltaC={tempDeltaC}
-              baselineData={baselineData}
-              activeData={lastData}
               forceOpenNewForm={newFormTrigger}
               onSelectCoords={handleSelectCoords}
               onFocusParcel={handleFocusParcel}
@@ -689,25 +656,10 @@ export default function App() {
               onChangeScenario={handleChangeScenario}
             />
 
-            {/* Main Grid: Decision Center FIRST + Map | Accessible Voice Simulator */}
-            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_364px] lg:items-start">
+            {/* Main Grid: Map FIRST (left) + Compact Diagnosis Summary (right) | Accessible Voice Simulator */}
+            <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_348px] lg:items-start">
               <section id="workspaceCenter" className="min-w-0 space-y-4">
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.08fr_1fr] xl:items-stretch">
-                  <DiagnosisSummaryCard
-                    language={language}
-                    viewMode={viewMode}
-                    loading={analysisLoading}
-                    error={analysisError}
-                    diagnosis={lastData?.diagnosis ?? null}
-                    baselineDiagnosis={baselineData?.diagnosis ?? null}
-                    focusedParcel={focusedParcel}
-                    strategies={lastData?.strategies ?? []}
-                    baselineStrategies={baselineData?.strategies ?? []}
-                    rainDeltaPct={rainDeltaPct}
-                    tempDeltaC={tempDeltaC}
-                    onChangeScenario={handleChangeScenario}
-                  />
-
+                <div className="grid grid-cols-1 gap-4 lg:grid-cols-[1.22fr_0.78fr] lg:items-stretch">
                   <ParcelMap
                     lat={selectedLat}
                     lon={selectedLon}
@@ -719,6 +671,16 @@ export default function App() {
                     onSelectCoords={(lat, lon) => handleSelectCoords(lat, lon, false)}
                     onSelectParcel={handleFocusParcel}
                     onStartNewParcelAtCoords={() => setNewFormTrigger((n) => n + 1)}
+                  />
+
+                  <DiagnosisSummaryCard
+                    language={language}
+                    viewMode={viewMode}
+                    loading={analysisLoading}
+                    error={analysisError}
+                    diagnosis={lastData?.diagnosis ?? null}
+                    focusedParcel={focusedParcel}
+                    strategies={lastData?.strategies ?? []}
                   />
                 </div>
 
@@ -735,24 +697,15 @@ export default function App() {
               </section>
 
               <aside id="workspaceWhatsapp" className="min-w-0 space-y-2.5 lg:sticky lg:top-16">
-                <div className="rounded-xl border border-[#e3e6e1] bg-white px-3.5 py-2.5">
-                  <div className="flex items-center gap-2">
-                    <Smartphone className="h-4 w-4 shrink-0 text-[#1b4332]" />
-                    <strong className="text-xs font-bold text-[#111813] sm:text-sm">
-                      {tr(
-                        language,
-                        'Simulador WhatsApp · Canal de accesibilidad Kusi Kusi',
-                        'WhatsApp Simulator · Kusi Kusi accessibility view',
-                      )}
-                    </strong>
-                  </div>
-                  <p className="mt-1 text-xs text-[#475569]">
+                <div className="flex items-center gap-2 rounded-xl border border-[#e3e6e1] bg-white px-3.5 py-2.5">
+                  <Smartphone className="h-4 w-4 shrink-0 text-[#1b4332]" />
+                  <strong className="truncate text-xs font-bold text-[#111813] sm:text-sm">
                     {tr(
                       language,
-                      'Simulación local en navegador (Web Speech API) alimentada por los datos NASA calculados para esta parcela.',
-                      'Local browser simulation (Web Speech API) driven by the NASA analysis computed for this field.',
+                      'Simulador local WhatsApp · Kusi Kusi',
+                      'Local WhatsApp simulator · Kusi Kusi',
                     )}
-                  </p>
+                  </strong>
                 </div>
 
                 <KusiSimulator

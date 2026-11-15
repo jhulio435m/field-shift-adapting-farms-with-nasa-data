@@ -91,7 +91,7 @@ export function ParcelMap({
   const [mosaicDate, setMosaicDate] = useState<GibsMosaicDate>('2026-07-01');
   const [layerOpacity, setLayerOpacity] = useState<number>(0.7);
   const [showHalo, setShowHalo] = useState<boolean>(true);
-  const [controlsOpen, setControlsOpen] = useState<boolean>(true);
+  const [controlsOpen, setControlsOpen] = useState<boolean>(false);
 
   const containerRef = useRef<HTMLDivElement | null>(null);
   const controlsOverlayRef = useRef<HTMLDivElement | null>(null);
@@ -557,7 +557,9 @@ export function ParcelMap({
           onClick={stopMapPropagation}
           onMouseDown={stopMapPropagation}
           onDoubleClick={stopMapPropagation}
-          className="absolute right-2.5 top-2.5 z-[1000] w-[236px] rounded-lg border border-[#d6dad3] bg-white/95 shadow-md backdrop-blur-xs sm:w-[258px]"
+          className={`absolute right-2.5 top-2.5 z-[1000] rounded-lg border border-[#d6dad3] bg-white/95 shadow-md backdrop-blur-xs ${
+            controlsOpen ? 'w-[236px] sm:w-[258px]' : 'w-auto max-w-[calc(100%-20px)]'
+          }`}
         >
           <button
             type="button"
@@ -570,7 +572,9 @@ export function ParcelMap({
               <span className="truncate">
                 {controlsOpen
                   ? tr(language, 'Capas y fecha NASA GIBS', 'NASA GIBS layers & date')
-                  : `${activeConfig.shortLabel}${activeFilter !== 'none' ? ` · ${mosaicDate}` : ''}`}
+                  : activeFilter === 'none'
+                    ? tr(language, 'Capas y filtros NASA', 'NASA layers & filters')
+                    : `${activeConfig.shortLabel} · ${mosaicDate}`}
               </span>
             </span>
             {controlsOpen ? (
@@ -696,7 +700,9 @@ export function ParcelMap({
           onClick={stopMapPropagation}
           onMouseDown={stopMapPropagation}
           onDoubleClick={stopMapPropagation}
-          className="absolute bottom-6 left-2.5 z-[1000] max-w-[calc(100%-20px)] rounded-lg border border-[#d6dad3] bg-white/95 px-3 py-2 shadow-md backdrop-blur-xs sm:bottom-3 sm:max-w-[340px]"
+          className={`absolute bottom-6 left-2.5 z-[1000] max-w-[calc(100%-20px)] rounded-lg border border-[#d6dad3] bg-white/95 shadow-md backdrop-blur-xs sm:bottom-3 ${
+            activeFilter === 'none' ? 'px-2.5 py-1.5' : 'px-3 py-2 sm:max-w-[340px]'
+          }`}
         >
           <div className="flex flex-wrap items-center gap-1.5">
             <span className="inline-flex items-center gap-1 text-xs font-bold text-[#111813]">
@@ -715,7 +721,9 @@ export function ParcelMap({
             )}
           </div>
 
-          <p className="mt-1 text-xs leading-snug text-[#475569]">{activeConfig.hint}</p>
+          {activeFilter !== 'none' && (
+            <p className="mt-1 text-xs leading-snug text-[#475569]">{activeConfig.hint}</p>
+          )}
 
           {activeConfig.scale && (
             <div className="mt-2">

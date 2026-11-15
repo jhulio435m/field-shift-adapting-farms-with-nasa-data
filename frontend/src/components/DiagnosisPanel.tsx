@@ -12,8 +12,6 @@ import {
   Compass,
   Database,
   Droplets,
-  Flame,
-  Info,
   Mountain,
   Snowflake,
   Sprout,
@@ -41,13 +39,8 @@ interface DiagnosisSummaryCardProps {
   loading: boolean;
   error: string | null;
   diagnosis: ParcelDiagnosis | null;
-  baselineDiagnosis?: ParcelDiagnosis | null;
   focusedParcel: Parcel | null;
   strategies: RotationStrategy[];
-  baselineStrategies?: RotationStrategy[];
-  rainDeltaPct: number;
-  tempDeltaC: number;
-  onChangeScenario?: (rain: number, temp: number) => void;
 }
 
 interface DiagnosisExplorerProps {
@@ -382,6 +375,91 @@ function MonthlyAnalytics({
         </svg>
       </div>
 
+      {/* Technical KPI Strip (ET, Sentinel-2 NDVI, SRTM Terrain) moved cleanly to Tab 3 */}
+      {(() => {
+        const vegetationLabels: Record<string, string> = {
+          suelo_desnudo_o_sin_cobertura: tr(language, 'Poca cobertura vegetal', 'Low vegetative cover'),
+          cobertura_baja_o_estres: tr(language, 'Cobertura media / estrés', 'Moderate cover / stress'),
+          vegetacion_vigorosa: tr(language, 'Pasto / cultivo vigoroso', 'Healthy green cover'),
+        };
+        const erosionLabels: Record<'low' | 'moderate' | 'high' | 'unknown', string> = {
+          low: tr(language, 'Pendiente baja', 'Low slope'),
+          moderate: tr(language, 'Pendiente moderada', 'Moderate slope'),
+          high: tr(language, 'Pendiente alta', 'Steep slope'),
+          unknown: tr(language, 'Sin dato', 'N/A'),
+        };
+        const erosionBadgeClass: Record<'low' | 'moderate' | 'high' | 'unknown', string> = {
+          low: 'bg-[#dcfce7] text-[#14532d]',
+          moderate: 'bg-[#fef3c7] text-[#92400e]',
+          high: 'bg-[#fee2e2] text-[#991b1b]',
+          unknown: 'bg-[#f1f3f0] text-[#475569]',
+        };
+        const ndviOk = hc !== null && hc.latest_ndvi !== null && hc.latest_ndvi !== undefined;
+        const ndviValue = ndviOk && hc?.latest_ndvi != null ? hc.latest_ndvi : 0;
+        const ndviPct = Math.max(0, Math.min(100, Math.round(ndviValue * 100)));
+
+        return (
+          <div className="grid grid-cols-1 gap-3 sm:grid-cols-3">
+            <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
+                  <CloudRain className="h-3.5 w-3.5 text-[#1b4332]" />
+                  {tr(language, 'Evapotranspiración (ET)', 'Evapotranspiration (ET)')}
+                </span>
+                <span className="font-mono text-xs font-bold text-[#111813] tabular-nums">
+                  {diagnosis.annual_et_mm} mm
+                </span>
+              </div>
+              <p className="text-xs text-[#475569]">
+                {tr(
+                  language,
+                  `Lluvia ${diagnosis.annual_precip_mm} mm · Balance ${diagnosis.annual_water_balance_mm > 0 ? '+' : ''}${diagnosis.annual_water_balance_mm} mm (agua que evapora y consume el cultivo).`,
+                  `Rain ${diagnosis.annual_precip_mm} mm · Balance ${diagnosis.annual_water_balance_mm > 0 ? '+' : ''}${diagnosis.annual_water_balance_mm} mm.`,
+                )}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
+                  <Sprout className="h-3.5 w-3.5 text-[#15803d]" />
+                  {tr(language, 'Verdor Sentinel-2 (NDVI)', 'Sentinel-2 NDVI')}
+                </span>
+                <span className="font-mono text-xs font-bold text-[#111813] tabular-nums">
+                  {ndviOk ? `${ndviPct}% (${ndviValue.toFixed(2)})` : '—'}
+                </span>
+              </div>
+              <p className="text-xs text-[#475569]">
+                {ndviOk && hc
+                  ? `${vegetationLabels[hc.vegetation_status] || tr(language, 'Vigor medio', 'Moderate')} · ${hc.latest_ndvi_date ?? ''}`
+                  : tr(language, 'Sin toma despejada reciente.', 'Recent cloudy pass.')}
+              </p>
+            </div>
+
+            <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3 space-y-1">
+              <div className="flex items-center justify-between gap-2">
+                <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
+                  <Mountain className="h-3.5 w-3.5 text-[#1b4332]" />
+                  {tr(language, 'Relieve SRTM', 'SRTM Terrain')}
+                </span>
+                <span
+                  className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
+                    erosionBadgeClass[diagnosis.terrain.erosion_risk]
+                  }`}
+                >
+                  {erosionLabels[diagnosis.terrain.erosion_risk]}
+                </span>
+              </div>
+              <p className="font-mono text-xs text-[#111813] tabular-nums">
+                {diagnosis.terrain.live_terrain_data
+                  ? `${diagnosis.terrain.elevation_m} m · ${diagnosis.terrain.slope_pct}% ${tr(language, 'pendiente', 'slope')}`
+                  : tr(language, 'Relieve sin dato puntual', 'Elevation N/A')}
+              </p>
+            </div>
+          </div>
+        );
+      })()}
+
       <div className="flex flex-wrap items-center gap-2 pt-1">
         <button
           type="button"
@@ -566,34 +644,9 @@ export function DiagnosisSummaryCard({
   loading,
   error,
   diagnosis,
-  baselineDiagnosis,
   focusedParcel,
   strategies,
-  baselineStrategies,
-  rainDeltaPct,
-  tempDeltaC,
-  onChangeScenario,
 }: DiagnosisSummaryCardProps) {
-  const vegetationLabels: Record<string, string> = {
-    suelo_desnudo_o_sin_cobertura: tr(language, 'Poca cobertura vegetal', 'Low vegetative cover'),
-    cobertura_baja_o_estres: tr(language, 'Cobertura media / estrés', 'Moderate cover / stress'),
-    vegetacion_vigorosa: tr(language, 'Pasto / cultivo vigoroso', 'Healthy green cover'),
-  };
-
-  const erosionLabels: Record<'low' | 'moderate' | 'high' | 'unknown', string> = {
-    low: tr(language, 'Pendiente baja (terreno firme)', 'Low slope (stable)'),
-    moderate: tr(language, 'Pendiente moderada (proteger suelo)', 'Moderate slope (cover needed)'),
-    high: tr(language, 'Pendiente alta (riesgo lavado)', 'Steep slope (erosion risk)'),
-    unknown: tr(language, 'Relieve sin dato', 'Terrain N/A'),
-  };
-
-  const erosionBadgeClass: Record<'low' | 'moderate' | 'high' | 'unknown', string> = {
-    low: 'bg-[#dcfce7] text-[#14532d]',
-    moderate: 'bg-[#fef3c7] text-[#92400e]',
-    high: 'bg-[#fee2e2] text-[#991b1b]',
-    unknown: 'bg-[#f1f3f0] text-[#475569]',
-  };
-
   if (loading && !diagnosis) {
     return (
       <section className="flex h-full flex-col justify-center rounded-xl border border-[#e3e6e1] bg-white p-6 text-center">
@@ -631,13 +684,13 @@ export function DiagnosisSummaryCard({
       <section className="flex h-full flex-col justify-center rounded-xl border border-[#e3e6e1] bg-white p-6 text-center">
         <Compass className="mx-auto h-8 w-8 text-[#1b4332]" />
         <h2 className="mt-3 text-base font-bold text-[#111813]">
-          {tr(language, '¿Qué conviene sembrar ante un clima cambiante?', 'What should you plant as climate shifts?')}
+          {tr(language, 'Diagnóstico agrícola de la parcela', 'Field agricultural diagnosis')}
         </h2>
         <p className="mt-1.5 text-sm text-[#475569]">
           {tr(
             language,
-            'Elige una parcela arriba o marca un punto del mapa para ver la comparación entre tu práctica actual y la alternativa recomendada.',
-            'Choose a field above or drop a map pin to compare your current practice against a climate-resilient alternative.',
+            'Elige una parcela arriba o toca el mapa para ver el resumen de agua, humedad y la alternativa recomendada.',
+            'Choose a field above or click the map to view water, soil moisture, and the top suggested alternative.',
           )}
         </p>
       </section>
@@ -645,239 +698,92 @@ export function DiagnosisSummaryCard({
   }
 
   const monthly = diagnosis.monthly ?? [];
-  const minAnnualTemp = monthly.length
-    ? Math.round(Math.min(...monthly.map((m) => m.temp_min_c)))
-    : null;
-  const maxAnnualTemp = monthly.length
-    ? Math.round(Math.max(...monthly.map((m) => m.temp_max_c)))
-    : null;
-
-  const topMoistPct = Math.round(diagnosis.avg_soil_moisture_top * 100);
-  const rootMoistPct = Math.round(diagnosis.avg_soil_moisture_root * 100);
-  const maxRainEt = Math.max(diagnosis.annual_precip_mm, diagnosis.annual_et_mm, 1);
-  const rainBarPct = Math.round((diagnosis.annual_precip_mm / maxRainEt) * 100);
-  const etBarPct = Math.round((diagnosis.annual_et_mm / maxRainEt) * 100);
-
-  const hc = diagnosis.historical_correlation ?? null;
-  const ndviOk = hc !== null && hc.latest_ndvi !== null && hc.latest_ndvi !== undefined;
-  const ndviValue = ndviOk && hc?.latest_ndvi !== null && hc?.latest_ndvi !== undefined ? hc.latest_ndvi : 0;
-  const ndviPct = Math.max(0, Math.min(100, Math.round(ndviValue * 100)));
-
   const optimalMonthsCount = monthly.filter(
     (m) => !m.frost_risk && !m.heat_stress && !m.dry_stress,
   ).length;
+  const topMoistPct = Math.round(diagnosis.avg_soil_moisture_top * 100);
+  const rootMoistPct = Math.round(diagnosis.avg_soil_moisture_root * 100);
 
-  const currentStrategy = strategies.find((s) => s.is_current) ?? null;
   const nonCurrent = strategies.filter((s) => !s.is_current);
   const topStrategy =
     (nonCurrent.length ? [...nonCurrent].sort((a, b) => b.fit_score - a.fit_score)[0] : strategies[0]) ??
     null;
-
-  const currentCoveredCount = currentStrategy
-    ? currentStrategy.monthly_calendar.filter((c) => c.status === 'covered').length
-    : 0;
   const topCoveredCount = topStrategy
     ? topStrategy.monthly_calendar.filter((c) => c.status === 'covered').length
     : 0;
 
-  const baselineNonCurrent = (baselineStrategies ?? []).filter((s) => !s.is_current);
-  const baselineTopStrategy =
-    baselineNonCurrent.length > 0
-      ? [...baselineNonCurrent].sort((a, b) => b.fit_score - a.fit_score)[0]
-      : null;
-
-  const scenarioActive = rainDeltaPct !== 0 || tempDeltaC !== 0;
-  const rankChanged =
-    Boolean(baselineTopStrategy && topStrategy && baselineTopStrategy.id !== topStrategy.id);
-  const scoreDiff =
-    baselineTopStrategy && topStrategy
-      ? Math.round(topStrategy.fit_score - baselineTopStrategy.fit_score)
-      : 0;
-
-  const isDroughtScenario = rainDeltaPct === -25 && tempDeltaC === 1.5;
-
   return (
     <section
-      aria-label={tr(language, 'Centro de decisiones agrícolas', 'Agricultural decision center')}
-      className="flex h-full flex-col justify-between gap-4 rounded-xl border border-[#e3e6e1] bg-white p-4 sm:p-5"
+      aria-label={tr(language, 'Diagnóstico resumido de la parcela', 'Compact field diagnosis summary')}
+      className="flex h-full flex-col justify-between gap-3.5 rounded-xl border border-[#e3e6e1] bg-white p-4 sm:p-5"
     >
-      {/* Decision Center Header */}
-      <div className="space-y-3">
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <div>
-            <h2 className="text-base font-bold leading-snug text-[#111813] sm:text-lg">
-              {tr(
-                language,
-                '¿Qué conviene sembrar ante un clima cambiante?',
-                'What should you plant as climate shifts?',
-              )}
-            </h2>
-            <p className="mt-0.5 text-xs text-[#475569] sm:text-sm">
-              {focusedParcel ? (
-                <>
-                  <strong className="text-[#111813]">{focusedParcel.name}</strong> ·{' '}
-                </>
-              ) : null}
-              {tr(
-                language,
-                'Climatología NASA POWER (30a) + prioridades del productor.',
-                'NASA POWER climatology (30y) + farmer field priorities.',
-              )}
-            </p>
-          </div>
-
-          <div className="flex flex-wrap items-center gap-2">
-            {onChangeScenario && (
-              <div className="inline-flex rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-0.5">
-                <button
-                  type="button"
-                  onClick={() => onChangeScenario(0, 0)}
-                  aria-pressed={!scenarioActive}
-                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                    !scenarioActive
-                      ? 'bg-[#1b4332] text-white'
-                      : 'text-[#334155] hover:text-[#111813]'
-                  }`}
-                >
-                  <Sun className="h-3.5 w-3.5" />
-                  <span>{tr(language, 'Clima actual', 'Current climate')}</span>
-                </button>
-                <button
-                  type="button"
-                  onClick={() => onChangeScenario(-25, 1.5)}
-                  aria-pressed={isDroughtScenario}
-                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
-                    isDroughtScenario
-                      ? 'bg-[#b45309] text-white'
-                      : 'text-[#334155] hover:text-[#92400e]'
-                  }`}
-                >
-                  <Flame className="h-3.5 w-3.5" />
-                  <span>{tr(language, 'Sequía −25%', 'Drought −25%')}</span>
-                </button>
-              </div>
-            )}
-
-            <span className="rounded-md bg-[#dcfce7] px-2.5 py-1 text-xs font-semibold text-[#14532d] tabular-nums">
-              {optimalMonthsCount}/12 {tr(language, 'meses favorables', 'favorable mo')}
-            </span>
-          </div>
+      {/* 1. Compact Header */}
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0">
+          <h2 className="truncate text-base font-bold leading-snug text-[#111813] sm:text-lg">
+            {focusedParcel ? focusedParcel.name : tr(language, 'Punto seleccionado en mapa', 'Selected map location')}
+          </h2>
+          <p className="mt-0.5 text-xs text-[#475569]">
+            {tr(language, 'Resumen agrícola con datos NASA POWER y SMAP.', 'Summary based on NASA POWER & SMAP data.')}
+          </p>
         </div>
 
-        {/* Before vs After Impact Box when Drought/Rain Scenario Active */}
-        {scenarioActive && baselineDiagnosis && (
-          <div className="rounded-lg border border-[#fde68a] bg-[#fffbeb] px-3.5 py-2.5 text-xs text-[#78350f]">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <strong className="font-bold text-[#92400e]">
-                {tr(
-                  language,
-                  '¿Cambia la recomendación? Clima actual frente a escenario simulado:',
-                  'Does the recommendation change? Current climate vs. scenario:',
-                )}
-              </strong>
-              <span className="font-mono font-semibold tabular-nums">
-                {tr(language, 'Lluvia:', 'Rain:')} {baselineDiagnosis.annual_precip_mm} mm →{' '}
-                {diagnosis.annual_precip_mm} mm · {tr(language, 'Meses secos:', 'Dry mo:')}{' '}
-                {baselineDiagnosis.dry_months.length} → {diagnosis.dry_months.length}
-              </span>
-            </div>
-            <p className="mt-1 text-xs text-[#78350f]">
-              {rankChanged && topStrategy && baselineTopStrategy
-                ? tr(
-                    language,
-                    `Sí cambia la prioridad: bajo este escenario el modelo prioriza "${topStrategy.name}" (${Math.round(topStrategy.fit_score)}/100) en lugar de "${baselineTopStrategy.name}".`,
-                    `Yes — under this scenario the model shifts priority to "${topStrategy.name}" (${Math.round(topStrategy.fit_score)}/100) instead of "${baselineTopStrategy.name}".`,
-                  )
-                : topStrategy
-                  ? tr(
-                      language,
-                      `Se mantiene como líder "${topStrategy.name}" (${Math.round(topStrategy.fit_score)}/100${scoreDiff !== 0 ? `, variación ${scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff} pts respecto al clima normal` : ''}).`,
-                      `"${topStrategy.name}" stays top-ranked (${Math.round(topStrategy.fit_score)}/100${scoreDiff !== 0 ? `, ${scoreDiff > 0 ? `+${scoreDiff}` : scoreDiff} pts vs normal climate` : ''}).`,
-                    )
-                  : null}
-            </p>
-          </div>
-        )}
-
-        {/* Current Situation vs Suggested Model Alternative */}
-        {currentStrategy && topStrategy && (
-          <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-            <div className="rounded-lg border border-[#fde68a] bg-[#fffdf7] p-3.5 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="rounded bg-[#fef3c7] px-2 py-0.5 text-xs font-semibold text-[#92400e]">
-                  {tr(language, 'Situación actual', 'Current situation')}
-                </span>
-                <span className="font-mono text-xs font-semibold text-[#78350f] tabular-nums">
-                  {currentCoveredCount}/12 {tr(language, 'meses cubierto', 'mo covered')}
-                </span>
-              </div>
-              <h3 className="text-sm font-bold text-[#111813]">{currentStrategy.name}</h3>
-              <p className="text-xs leading-relaxed text-[#475569]">
-                {viewMode === 'farmer'
-                  ? currentStrategy.why_suggested_farmer
-                  : currentStrategy.why_suggested_agronomist}
-              </p>
-              <p className="text-xs font-medium text-[#92400e]">
-                {tr(language, 'Riesgos:', 'Risks:')} {diagnosis.dry_months.length}{' '}
-                {tr(language, 'meses secos', 'dry mo')} · {diagnosis.frost_risk_months.length}{' '}
-                {tr(language, 'meses con helada', 'frost mo')}
-              </p>
-            </div>
-
-            <div className="rounded-lg border border-[#1b4332]/40 bg-[#f4fbf6] p-3.5 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="inline-flex items-center gap-1 rounded bg-[#1b4332] px-2 py-0.5 text-xs font-semibold text-white">
-                  <Award className="h-3.5 w-3.5" />
-                  {tr(language, 'Mayor adecuación (modelo)', 'Highest-fit (model)')}
-                </span>
-                <span className="rounded-full bg-[#dcfce7] px-2.5 py-0.5 font-mono text-xs font-bold text-[#14532d] tabular-nums">
-                  {Math.round(topStrategy.fit_score)}/100
-                </span>
-              </div>
-
-              <h3 className="text-sm font-bold text-[#111813]">{topStrategy.name}</h3>
-
-              <div className="flex flex-wrap items-center gap-1">
-                {topStrategy.sequence.map((step, idx) => (
-                  <div key={`${step}-${idx}`} className="flex items-center gap-1">
-                    <span className="rounded border border-[#bbf7d0] bg-white px-2 py-0.5 text-xs font-semibold text-[#111813]">
-                      {step}
-                    </span>
-                    {idx < topStrategy.sequence.length - 1 && (
-                      <ArrowRight className="h-3.5 w-3.5 text-[#1b4332]" />
-                    )}
-                  </div>
-                ))}
-              </div>
-
-              <p className="text-xs leading-relaxed text-[#334155]">
-                {viewMode === 'farmer'
-                  ? topStrategy.why_suggested_farmer
-                  : topStrategy.why_suggested_agronomist}
-              </p>
-
-              <p className="text-xs font-medium text-[#14532d] tabular-nums">
-                {topCoveredCount}/12 {tr(language, 'meses suelo cubierto · Verificar en campo:', 'mo covered · Verify locally:')}{' '}
-                <span className="font-normal text-[#334155]">
-                  {topStrategy.local_review_needed[0]}
-                </span>
-              </p>
-            </div>
-          </div>
-        )}
+        <span className="shrink-0 rounded-md bg-[#dcfce7] px-2.5 py-1 text-xs font-semibold text-[#14532d] tabular-nums">
+          {optimalMonthsCount}/12 {tr(language, 'meses favorables', 'favorable mo')}
+        </span>
       </div>
 
-      {/* 4 Field Vitals with Immediate Agricultural Explanations */}
-      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        {/* 1. Rain vs ET */}
+      {/* 2. Top Suggested Alternative Only */}
+      {topStrategy && (
+        <div className="rounded-lg border border-[#1b4332]/35 bg-[#f4fbf6] p-3.5 space-y-2">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <span className="inline-flex items-center gap-1 rounded bg-[#1b4332] px-2 py-0.5 text-xs font-semibold text-white">
+              <Award className="h-3.5 w-3.5 shrink-0" />
+              {tr(language, 'Alternativa con mayor adecuación según el modelo', 'Highest-fit alternative (model)')}
+            </span>
+            <span className="rounded-full bg-[#dcfce7] px-2.5 py-0.5 font-mono text-xs font-bold text-[#14532d] tabular-nums">
+              {Math.round(topStrategy.fit_score)}/100
+            </span>
+          </div>
+
+          <h3 className="text-sm font-bold text-[#111813] sm:text-base">{topStrategy.name}</h3>
+
+          <div className="flex flex-wrap items-center gap-1">
+            {topStrategy.sequence.map((step, idx) => (
+              <div key={`${step}-${idx}`} className="flex items-center gap-1">
+                <span className="rounded border border-[#bbf7d0] bg-white px-2 py-0.5 text-xs font-semibold text-[#111813]">
+                  {step}
+                </span>
+                {idx < topStrategy.sequence.length - 1 && (
+                  <ArrowRight className="h-3.5 w-3.5 text-[#1b4332]" />
+                )}
+              </div>
+            ))}
+          </div>
+
+          <p className="text-xs leading-relaxed text-[#334155] sm:text-sm">
+            {viewMode === 'farmer'
+              ? topStrategy.why_suggested_farmer
+              : topStrategy.why_suggested_agronomist}
+          </p>
+
+          <p className="text-xs font-medium text-[#14532d] tabular-nums">
+            {topCoveredCount}/12 {tr(language, 'meses con cobertura · Ver detalle abajo', 'mo covered · Full comparison below')}
+          </p>
+        </div>
+      )}
+
+      {/* 3. Two Essential Indicators Only */}
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-1 xl:grid-cols-2">
+        {/* Indicator 1: Water & Climate Risk */}
         <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3.5 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813] sm:text-sm">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
               <CloudRain className="h-4 w-4 text-[#2563eb]" />
-              {tr(language, 'Lluvia vs. Evapotranspiración (ET)', 'Rain vs. ET Demand')}
+              {tr(language, 'Riesgo de agua y clima', 'Water & climate risk')}
             </span>
             <span
-              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                 diagnosis.annual_water_balance_mm >= 0
                   ? 'bg-[#dcfce7] text-[#14532d]'
                   : 'bg-[#fef3c7] text-[#92400e]'
@@ -885,7 +791,7 @@ export function DiagnosisSummaryCard({
             >
               {diagnosis.annual_water_balance_mm >= 0
                 ? tr(language, 'Superávit', 'Surplus')
-                : tr(language, 'Déficit hídrico', 'Water deficit')}
+                : tr(language, 'Déficit', 'Deficit')}
             </span>
           </div>
 
@@ -894,39 +800,53 @@ export function DiagnosisSummaryCard({
               {diagnosis.annual_precip_mm} mm
             </strong>
             <span className="font-mono text-xs text-[#475569] tabular-nums">
-              ({tr(language, 'Balance:', 'Balance:')}{' '}
-              {diagnosis.annual_water_balance_mm > 0 ? '+' : ''}
-              {diagnosis.annual_water_balance_mm} mm)
+              {tr(language, 'Bal:', 'Bal:')} {diagnosis.annual_water_balance_mm > 0 ? '+' : ''}
+              {diagnosis.annual_water_balance_mm} mm
             </span>
           </div>
 
-          <div className="space-y-1.5 text-xs text-[#334155]">
-            <div className="flex justify-between">
-              <span>{tr(language, 'Lluvia promedio anual', 'Annual rainfall')}</span>
-              <span className="font-mono font-semibold text-[#111813]">{diagnosis.annual_precip_mm} mm</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
-              <div className="h-full rounded-full bg-[#1b4332]" style={{ width: `${rainBarPct}%` }} />
-            </div>
-            <div className="flex justify-between">
-              <span>{tr(language, 'Demanda ET (evapora + planta)', 'ET demand (evap + crop)')}</span>
-              <span className="font-mono font-semibold text-[#111813]">{diagnosis.annual_et_mm} mm</span>
-            </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
-              <div className="h-full rounded-full bg-[#d97706]" style={{ width: `${etBarPct}%` }} />
-            </div>
+          <div className="flex flex-wrap gap-1.5 text-xs font-medium tabular-nums">
+            <span
+              className={`rounded px-2 py-0.5 ${
+                diagnosis.dry_months.length >= 6
+                  ? 'bg-[#fef3c7] text-[#92400e]'
+                  : 'bg-[#f1f3f0] text-[#334155]'
+              }`}
+            >
+              {diagnosis.dry_months.length}m {tr(language, 'secos', 'dry')}
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 ${
+                diagnosis.frost_risk_months.length > 0
+                  ? 'bg-[#dbeafe] text-[#1e3a8a]'
+                  : 'bg-[#dcfce7] text-[#14532d]'
+              }`}
+            >
+              <Snowflake className="h-3 w-3" />
+              {diagnosis.frost_risk_months.length}m
+            </span>
+            <span
+              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 ${
+                diagnosis.heat_stress_months.length > 0
+                  ? 'bg-[#ffedd5] text-[#9a3412]'
+                  : 'bg-[#dcfce7] text-[#14532d]'
+              }`}
+            >
+              <Sun className="h-3 w-3" />
+              {diagnosis.heat_stress_months.length}m
+            </span>
           </div>
         </div>
 
-        {/* 2. Soil Moisture (SMAP) */}
+        {/* Indicator 2: Soil Moisture (SMAP) */}
         <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3.5 space-y-2">
           <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813] sm:text-sm">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813]">
               <Droplets className="h-4 w-4 text-[#0284c7]" />
               {tr(language, 'Humedad suelo (SMAP)', 'Soil moisture (SMAP)')}
             </span>
             <span
-              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
+              className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${
                 rootMoistPct >= 55
                   ? 'bg-[#dcfce7] text-[#14532d]'
                   : rootMoistPct >= 35
@@ -945,169 +865,28 @@ export function DiagnosisSummaryCard({
           <strong className="block font-mono text-lg font-bold text-[#111813] tabular-nums">
             {rootMoistPct}%{' '}
             <span className="font-sans text-xs font-normal text-[#475569]">
-              {tr(language, 'humedad en zona de raíces', 'root-zone moisture')}
+              {tr(language, 'en raíz', 'root zone')}
             </span>
           </strong>
 
-          <div className="space-y-1.5 text-xs text-[#334155]">
-            <div className="flex justify-between">
-              <span>{tr(language, 'En raíz (0–100 cm)', 'Root zone (0–100 cm)')}</span>
-              <span className="font-mono font-semibold text-[#111813]">{rootMoistPct}%</span>
+          <div className="space-y-1 text-xs text-[#334155]">
+            <div className="flex justify-between font-mono tabular-nums">
+              <span>{tr(language, 'Raíz (0–100 cm)', 'Root (0–100 cm)')}</span>
+              <span className="font-semibold text-[#111813]">{rootMoistPct}%</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
               <div className="h-full rounded-full bg-[#1b4332]" style={{ width: `${rootMoistPct}%` }} />
             </div>
-            <div className="flex justify-between">
-              <span>{tr(language, 'Superficie (0–5 cm)', 'Topsoil (0–5 cm)')}</span>
-              <span className="font-mono font-semibold text-[#111813]">{topMoistPct}%</span>
+            <div className="flex justify-between font-mono tabular-nums">
+              <span>{tr(language, 'Superficie (0–5 cm)', 'Top (0–5 cm)')}</span>
+              <span className="font-semibold text-[#111813]">{topMoistPct}%</span>
             </div>
-            <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
+            <div className="h-1.5 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
               <div className="h-full rounded-full bg-[#0284c7]" style={{ width: `${topMoistPct}%` }} />
             </div>
           </div>
-          <p className="text-xs text-[#475569]">
-            {tr(
-              language,
-              'SMAP mide por microondas cuánta agua retiene la tierra.',
-              'SMAP measures water retained in topsoil and root zone.',
-            )}
-          </p>
-        </div>
-
-        {/* 3. Climate, Frost, Heat & Terrain */}
-        <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3.5 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813] sm:text-sm">
-              <Thermometer className="h-4 w-4 text-[#b45309]" />
-              {tr(language, 'Clima, altura y relieve', 'Climate & terrain')}
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                erosionBadgeClass[diagnosis.terrain.erosion_risk]
-              }`}
-            >
-              {erosionLabels[diagnosis.terrain.erosion_risk]}
-            </span>
-          </div>
-
-          <strong className="block font-mono text-lg font-bold text-[#111813] tabular-nums">
-            {diagnosis.annual_temp_mean_c} °C{' '}
-            <span className="font-sans text-xs font-normal text-[#475569]">
-              ({minAnnualTemp ?? '—'}° a {maxAnnualTemp ?? '—'}°)
-            </span>
-          </strong>
-
-          <div className="flex flex-wrap gap-1.5 text-xs font-medium">
-            <span
-              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 ${
-                diagnosis.frost_risk_months.length > 0
-                  ? 'bg-[#dbeafe] text-[#1e3a8a]'
-                  : 'bg-[#dcfce7] text-[#14532d]'
-              }`}
-            >
-              <Snowflake className="h-3.5 w-3.5" />
-              {diagnosis.frost_risk_months.length} {tr(language, 'meses helada', 'frost mo')}
-            </span>
-            <span
-              className={`inline-flex items-center gap-1 rounded px-2 py-0.5 ${
-                diagnosis.heat_stress_months.length > 0
-                  ? 'bg-[#ffedd5] text-[#9a3412]'
-                  : 'bg-[#dcfce7] text-[#14532d]'
-              }`}
-            >
-              <Sun className="h-3.5 w-3.5" />
-              {diagnosis.heat_stress_months.length} {tr(language, 'meses calor', 'heat mo')}
-            </span>
-            {diagnosis.terrain.live_terrain_data && (
-              <span className="inline-flex items-center gap-1 rounded border border-[#e3e6e1] bg-white px-2 py-0.5 font-mono text-[#111813]">
-                <Mountain className="h-3.5 w-3.5 text-[#1b4332]" />
-                {diagnosis.terrain.elevation_m} m · {diagnosis.terrain.slope_pct}%
-              </span>
-            )}
-          </div>
-          {viewMode === 'agronomist' && hc && (
-            <p className="font-mono text-xs text-[#475569]">
-              {tr(language, 'Tendencia 2005–2024:', '2005–2024 trend:')}{' '}
-              {hc.temp_trend_c_per_decade > 0 ? '+' : ''}
-              {hc.temp_trend_c_per_decade} °C/dec · {tr(language, 'Lluvia 5a:', '5y rain:')}{' '}
-              {hc.precip_change_pct_recent_5y > 0 ? '+' : ''}
-              {hc.precip_change_pct_recent_5y}%
-            </p>
-          )}
-        </div>
-
-        {/* 4. Vegetation Vigor (NDVI Sentinel-2) */}
-        <div className="rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-3.5 space-y-2">
-          <div className="flex items-center justify-between gap-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#111813] sm:text-sm">
-              <Sprout className="h-4 w-4 text-[#15803d]" />
-              {tr(language, 'Verdor del cultivo (NDVI)', 'Crop greenness (NDVI)')}
-            </span>
-            <span
-              className={`rounded-full px-2 py-0.5 text-xs font-semibold ${
-                !ndviOk
-                  ? 'bg-[#f1f3f0] text-[#475569]'
-                  : ndviValue >= 0.45
-                    ? 'bg-[#dcfce7] text-[#14532d]'
-                    : ndviValue >= 0.2
-                      ? 'bg-[#fef3c7] text-[#92400e]'
-                      : 'bg-[#fee2e2] text-[#991b1b]'
-              }`}
-            >
-              {ndviOk && hc
-                ? vegetationLabels[hc.vegetation_status] || tr(language, 'Vigor medio', 'Moderate')
-                : tr(language, 'Con nubes', 'Cloudy pass')}
-            </span>
-          </div>
-
-          <div className="flex flex-wrap items-baseline justify-between gap-1">
-            <strong className="font-mono text-lg font-bold text-[#111813] tabular-nums">
-              {ndviOk ? `${ndviPct}% (${ndviValue.toFixed(2)})` : '—'}
-            </strong>
-            {hc?.latest_ndvi_date && (
-              <span className="font-mono text-xs text-[#475569]">
-                Sentinel-2: {hc.latest_ndvi_date}
-              </span>
-            )}
-          </div>
-
-          <div className="h-2 w-full overflow-hidden rounded-full bg-[#e3e6e1]">
-            <div
-              className={`h-full rounded-full ${
-                !ndviOk
-                  ? 'bg-[#cbd5e1]'
-                  : ndviValue < 0.2
-                    ? 'bg-[#b45309]'
-                    : ndviValue < 0.45
-                      ? 'bg-[#d97706]'
-                      : 'bg-[#1b4332]'
-              }`}
-              style={{ width: `${ndviOk ? ndviPct : 0}%` }}
-            />
-          </div>
-
-          <p className="text-xs leading-snug text-[#475569]">
-            {viewMode === 'agronomist' && hc
-              ? `${hc.sentinel2_clear_scenes_12m} escenas claras (12m) · r=${hc.rain_soil_moisture_corr} lluvia↔suelo.`
-              : tr(
-                  language,
-                  'NDVI indica qué tan cubierta y activa está la vegetación observada por Sentinel-2.',
-                  'NDVI measures green vegetative cover observed by Sentinel-2.',
-                )}
-          </p>
         </div>
       </div>
-
-      <p className="flex items-start gap-1.5 text-xs text-[#475569]">
-        <Info className="mt-0.5 h-3.5 w-3.5 shrink-0 text-[#1b4332]" />
-        <span>
-          {tr(
-            language,
-            'Climatología histórica (NASA POWER 30a) + tendencia 2005–2024 + observación Sentinel-2 fechada + pronóstico 7 días (Open-Meteo).',
-            'Historical climatology (30y NASA POWER) + 2005–2024 trend + dated Sentinel-2 pass + 7-day forecast (Open-Meteo).',
-          )}
-        </span>
-      </p>
     </section>
   );
 }
@@ -1122,7 +901,6 @@ export function DiagnosisExplorer({
   tempDeltaC = 0,
   reminder,
 }: DiagnosisExplorerProps) {
-  // P0 fix: Rotation comparison is the default opening tab because it directly answers the planting decision
   const [activeTab, setActiveTab] = useState<ExplorerTab>('rotations');
 
   if (!diagnosis) {
@@ -1136,7 +914,7 @@ export function DiagnosisExplorer({
       aria-label={tr(language, 'Comparación y detalle del campo', 'Field comparison and details')}
       className="rounded-xl border border-[#e3e6e1] bg-white p-4 sm:p-5 space-y-4"
     >
-      {/* 3 Big Clear Tabs — Rotations first! */}
+      {/* 3 Clean Tabs — Rotations first */}
       <div
         role="tablist"
         aria-label={tr(language, 'Vistas detalladas del campo', 'Field detail tabs')}
@@ -1157,8 +935,8 @@ export function DiagnosisExplorer({
           <span>
             {tr(
               language,
-              `1. Comparar Rotaciones (${strategies.length})`,
-              `1. Compare Rotations (${strategies.length})`,
+              `Comparar rotaciones (${strategies.length})`,
+              `Compare rotations (${strategies.length})`,
             )}
           </span>
         </button>
@@ -1175,7 +953,7 @@ export function DiagnosisExplorer({
           }`}
         >
           <CalendarDays className="h-4 w-4 shrink-0" />
-          <span>{tr(language, '2. Pronóstico 7 Días y Año', '2. 7-Day Forecast & Year')}</span>
+          <span>{tr(language, 'Pronóstico y calendario', 'Forecast & calendar')}</span>
         </button>
 
         <button
@@ -1190,7 +968,7 @@ export function DiagnosisExplorer({
           }`}
         >
           <BarChart3 className="h-4 w-4 shrink-0" />
-          <span>{tr(language, '3. Gráficos Agua, Suelo y NASA', '3. Water, Soil & NASA Data')}</span>
+          <span>{tr(language, 'Datos técnicos y gráficos', 'Technical data & charts')}</span>
         </button>
       </div>
 

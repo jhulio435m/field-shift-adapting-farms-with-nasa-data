@@ -1,7 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
 import {
-  ArrowLeftRight,
-  ArrowRight,
   CloudRain,
   Flame,
   MapPin,
@@ -19,7 +17,6 @@ import type {
   Language,
   Parcel,
   PriorityType,
-  RotationCompareResponse,
   SoilTextureType,
 } from '../types';
 import { Button } from './ui/button';
@@ -37,8 +34,6 @@ interface ParcelPanelProps {
   parcelStatus: string;
   rainDeltaPct: number;
   tempDeltaC: number;
-  baselineData: RotationCompareResponse | null;
-  activeData: RotationCompareResponse | null;
   forceOpenNewForm?: number;
   onSelectCoords: (lat: number, lon: number, zoom?: boolean) => void;
   onFocusParcel: (id: string) => void;
@@ -73,8 +68,6 @@ export function ParcelPanel({
   parcelStatus,
   rainDeltaPct,
   tempDeltaC,
-  baselineData,
-  activeData,
   forceOpenNewForm = 0,
   onSelectCoords,
   onFocusParcel,
@@ -193,14 +186,6 @@ export function ParcelPanel({
 
   const formOpen = showNewForm || parcels.length === 0;
   const scenarioActive = rainDeltaPct !== 0 || tempDeltaC !== 0;
-
-  const baseTop = baselineData?.strategies
-    .filter((s) => !s.is_current)
-    .sort((a, b) => b.fit_score - a.fit_score)[0];
-  const activeTop = activeData?.strategies
-    .filter((s) => !s.is_current)
-    .sort((a, b) => b.fit_score - a.fit_score)[0];
-
   const isDrought = rainDeltaPct === -25 && tempDeltaC === 1.5;
 
   return (
@@ -396,124 +381,6 @@ export function ParcelPanel({
       </div>
 
       {/* Persistent Before vs After Scenario Strip */}
-      {scenarioActive && baselineData && activeData ? (
-        <div className="rounded-xl border border-[#fde68a] bg-[#fffbeb] p-3">
-          <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
-            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#92400e] sm:text-sm">
-              <ArrowLeftRight className="h-4 w-4" />
-              {tr(
-                language,
-                `Impacto lado a lado: Clima actual frente a ${isDrought ? 'Sequía −25% (+1.5 °C)' : `Lluvia ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% (+${tempDeltaC.toFixed(1)} °C)`}`,
-                `Side-by-side impact: Current climate vs. ${isDrought ? 'Drought −25% (+1.5 °C)' : `Rain ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% (+${tempDeltaC.toFixed(1)} °C)`}`,
-              )}
-            </span>
-            <button
-              type="button"
-              onClick={() => onChangeScenario(0, 0)}
-              className="rounded-md border border-[#fde68a] bg-white px-2.5 py-1 text-xs font-semibold text-[#92400e] hover:bg-[#fef3c7] cursor-pointer"
-            >
-              {tr(language, 'Volver a clima actual', 'Reset to current climate')}
-            </button>
-          </div>
-
-          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
-            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
-              <span className="block text-xs font-medium text-[#475569]">
-                {tr(language, 'Lluvia anual', 'Annual rainfall')}
-              </span>
-              <div className="mt-1 flex items-center gap-1.5 font-mono text-xs font-bold text-[#111813] tabular-nums sm:text-sm">
-                <span>{baselineData.diagnosis.annual_precip_mm} mm</span>
-                <ArrowRight className="h-3.5 w-3.5 text-[#b45309]" />
-                <span className={isDrought ? 'text-[#b45309]' : 'text-[#1d4ed8]'}>
-                  {activeData.diagnosis.annual_precip_mm} mm
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
-              <span className="block text-xs font-medium text-[#475569]">
-                {tr(language, 'Balance hídrico (P − ET)', 'Water balance (P − ET)')}
-              </span>
-              <div className="mt-1 flex items-center gap-1.5 font-mono text-xs font-bold text-[#111813] tabular-nums sm:text-sm">
-                <span>
-                  {baselineData.diagnosis.annual_water_balance_mm > 0 ? '+' : ''}
-                  {baselineData.diagnosis.annual_water_balance_mm} mm
-                </span>
-                <ArrowRight className="h-3.5 w-3.5 text-[#b45309]" />
-                <span
-                  className={
-                    activeData.diagnosis.annual_water_balance_mm <
-                    baselineData.diagnosis.annual_water_balance_mm
-                      ? 'text-[#b91c1c]'
-                      : 'text-[#15803d]'
-                  }
-                >
-                  {activeData.diagnosis.annual_water_balance_mm > 0 ? '+' : ''}
-                  {activeData.diagnosis.annual_water_balance_mm} mm
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
-              <span className="block text-xs font-medium text-[#475569]">
-                {tr(language, 'Meses secos al año', 'Dry months / year')}
-              </span>
-              <div className="mt-1 flex items-center gap-1.5 font-mono text-xs font-bold text-[#111813] tabular-nums sm:text-sm">
-                <span>{baselineData.diagnosis.dry_months.length}m</span>
-                <ArrowRight className="h-3.5 w-3.5 text-[#b45309]" />
-                <span
-                  className={
-                    activeData.diagnosis.dry_months.length > baselineData.diagnosis.dry_months.length
-                      ? 'text-[#b91c1c]'
-                      : 'text-[#15803d]'
-                  }
-                >
-                  {activeData.diagnosis.dry_months.length}m
-                </span>
-              </div>
-            </div>
-
-            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
-              <span className="block text-xs font-medium text-[#475569]">
-                {tr(language, '¿Cambia la recomendación?', 'Recommendation shift?')}
-              </span>
-              <div className="mt-1 text-xs font-bold text-[#14532d]">
-                {baseTop && activeTop && baseTop.id !== activeTop.id ? (
-                  <span>
-                    {baseTop.name} → {activeTop.name} ({Math.round(activeTop.fit_score)}/100)
-                  </span>
-                ) : activeTop ? (
-                  <span>
-                    {activeTop.name} ({baseTop ? `${Math.round(baseTop.fit_score)} → ` : ''}
-                    {Math.round(activeTop.fit_score)}/100)
-                  </span>
-                ) : (
-                  '—'
-                )}
-              </div>
-            </div>
-          </div>
-        </div>
-      ) : (
-        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e3e6e1] bg-[#fafaf8] px-3 py-2 text-xs text-[#475569]">
-          <span>
-            {tr(
-              language,
-              'Modo base (Clima histórico 30a). Activa Sequía −25% para comparar el antes y después en la parcela seleccionada.',
-              'Baseline mode (30y historical climate). Activate Drought −25% to compare before and after side by side.',
-            )}
-          </span>
-          <button
-            type="button"
-            onClick={() => onChangeScenario(-25, 1.5)}
-            className="inline-flex items-center gap-1 rounded-md border border-[#fde68a] bg-[#fffbeb] px-2.5 py-1 text-xs font-semibold text-[#92400e] hover:bg-[#fef3c7] cursor-pointer"
-          >
-            <Flame className="h-3.5 w-3.5" />
-            {tr(language, 'Probar Clima actual vs. Sequía −25%', 'Test Current vs. Drought −25%')}
-          </button>
-        </div>
-      )}
-
       {/* Expandable drawer for creating / editing a field */}
       {formOpen && (
         <form onSubmit={handleSave} className="mt-2 space-y-3 border-t border-[#e3e6e1] pt-3.5">
