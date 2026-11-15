@@ -1,5 +1,7 @@
 import { useEffect, useRef, useState } from 'react';
 import {
+  ArrowLeftRight,
+  ArrowRight,
   CloudRain,
   Flame,
   MapPin,
@@ -17,6 +19,7 @@ import type {
   Language,
   Parcel,
   PriorityType,
+  RotationCompareResponse,
   SoilTextureType,
 } from '../types';
 import { Button } from './ui/button';
@@ -34,6 +37,8 @@ interface ParcelPanelProps {
   parcelStatus: string;
   rainDeltaPct: number;
   tempDeltaC: number;
+  baselineData: RotationCompareResponse | null;
+  activeData: RotationCompareResponse | null;
   forceOpenNewForm?: number;
   onSelectCoords: (lat: number, lon: number, zoom?: boolean) => void;
   onFocusParcel: (id: string) => void;
@@ -41,12 +46,21 @@ interface ParcelPanelProps {
   onUpdateParcel: (id: string, payload: Omit<Parcel, 'id'>) => Promise<void>;
   onDeleteParcel: (id: string) => Promise<void>;
   onRunAnalysis: () => void;
-  onChangeRain: (val: number) => void;
-  onChangeTemp: (val: number) => void;
+  onChangeScenario: (rain: number, temp: number) => void;
 }
 
 const selectClass =
   'flex h-9 w-full rounded-lg border border-[#e3e6e1] bg-white px-2.5 py-1.5 text-xs text-[#111813] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#1b4332]';
+
+function getRegionBadge(parcel: Parcel, language: Language): string | null {
+  if (Math.abs(parcel.lat - -12.065) < 0.08 && Math.abs(parcel.lon - -75.2049) < 0.08) {
+    return tr(language, 'Sierra · Secano', 'Andes · Rainfed');
+  }
+  if (Math.abs(parcel.lat - -5.1945) < 0.08 && Math.abs(parcel.lon - -80.6328) < 0.08) {
+    return tr(language, 'Costa · Riego', 'Coast · Irrigated');
+  }
+  return null;
+}
 
 export function ParcelPanel({
   language,
@@ -59,6 +73,8 @@ export function ParcelPanel({
   parcelStatus,
   rainDeltaPct,
   tempDeltaC,
+  baselineData,
+  activeData,
   forceOpenNewForm = 0,
   onSelectCoords,
   onFocusParcel,
@@ -66,8 +82,7 @@ export function ParcelPanel({
   onUpdateParcel,
   onDeleteParcel,
   onRunAnalysis,
-  onChangeRain,
-  onChangeTemp,
+  onChangeScenario,
 }: ParcelPanelProps) {
   const [showNewForm, setShowNewForm] = useState(() => parcels.length === 0);
   const [editingParcelId, setEditingParcelId] = useState<string | null>(null);
@@ -177,25 +192,35 @@ export function ParcelPanel({
   }
 
   const formOpen = showNewForm || parcels.length === 0;
+  const scenarioActive = rainDeltaPct !== 0 || tempDeltaC !== 0;
+
+  const baseTop = baselineData?.strategies
+    .filter((s) => !s.is_current)
+    .sort((a, b) => b.fit_score - a.fit_score)[0];
+  const activeTop = activeData?.strategies
+    .filter((s) => !s.is_current)
+    .sort((a, b) => b.fit_score - a.fit_score)[0];
+
+  const isDrought = rainDeltaPct === -25 && tempDeltaC === 1.5;
 
   return (
     <section
       id="workspaceControls"
-      aria-label={tr(language, 'Selector de campo y clima', 'Field & climate selector')}
-      className="rounded-xl border border-[#e3e6e1] bg-white p-3.5 sm:p-4"
+      aria-label={tr(language, 'Selector de parcela y escenarios climáticos', 'Field & climate scenario selector')}
+      className="rounded-xl border border-[#e3e6e1] bg-white p-4 space-y-3"
     >
       <div className="flex flex-col gap-3 xl:flex-row xl:items-center xl:justify-between">
-        {/* 1. Field pills */}
-        <div className="min-w-0 flex-1 space-y-1.5">
+        {/* 1. Contrasting Field Selector */}
+        <div className="min-w-0 flex-1 space-y-2">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="text-xs font-bold text-[#111813]">
-              {tr(language, '1. Elige tu campo', '1. Pick your field')}
+            <span className="text-xs font-bold text-[#111813] sm:text-sm">
+              {tr(language, 'Elige tu parcela', 'Select your field')}
             </span>
-            <span className="font-mono text-[11px] text-[#475569]">
+            <span className="font-mono text-xs text-[#475569]">
               {profileName} · •••• {phoneLast4} ({parcels.length}/8)
             </span>
             {parcelStatus && (
-              <span className="rounded bg-[#fafaf8] px-2 py-0.5 text-[11px] font-medium text-[#1b4332]" role="status">
+              <span className="rounded bg-[#fafaf8] px-2 py-0.5 text-xs font-medium text-[#1b4332]" role="status">
                 {parcelStatus}
               </span>
             )}
@@ -205,11 +230,12 @@ export function ParcelPanel({
             {parcels.map((parcel) => {
               const isFocused = parcel.id === focusedParcelId;
               const confirmingDelete = confirmDeleteId === parcel.id;
+              const regionBadge = getRegionBadge(parcel, language);
 
               return (
                 <div
                   key={parcel.id}
-                  className={`inline-flex items-center gap-1 rounded-lg border px-2.5 py-1.5 transition-colors ${
+                  className={`inline-flex items-center gap-1.5 rounded-lg border px-3 py-1.5 transition-colors ${
                     isFocused
                       ? 'border-[#1b4332] bg-[#e6f4ea]'
                       : 'border-[#e3e6e1] bg-[#fafaf8] hover:bg-[#f0f2ee]'
@@ -222,24 +248,28 @@ export function ParcelPanel({
                       onFocusParcel(parcel.id);
                     }}
                     aria-pressed={isFocused}
-                    className="flex items-center gap-1.5 text-left cursor-pointer"
+                    className="flex flex-wrap items-center gap-1.5 text-left cursor-pointer"
                   >
                     <MapPin
-                      className={`h-3.5 w-3.5 shrink-0 ${
+                      className={`h-4 w-4 shrink-0 ${
                         isFocused ? 'text-[#1b4332]' : 'text-[#475569]'
                       }`}
                     />
                     <span
-                      className={`text-xs ${
+                      className={`text-xs sm:text-sm ${
                         isFocused ? 'font-bold text-[#143326]' : 'font-semibold text-[#111813]'
                       }`}
                     >
                       {parcel.name}
                     </span>
-                    <span className="font-mono text-[10.5px] text-[#475569]">
+                    {regionBadge && (
+                      <span className="rounded bg-white px-1.5 py-0.5 text-xs font-semibold text-[#1b4332]">
+                        {regionBadge}
+                      </span>
+                    )}
+                    <span className="font-mono text-xs text-[#475569]">
                       · {cropShortLabels[parcel.current_crop]}
                       {parcel.has_livestock ? tr(language, ' + ganado', ' + livestock') : ''}
-                      {parcel.area_ha ? ` · ${parcel.area_ha} ha` : ''}
                     </span>
                   </button>
 
@@ -251,7 +281,7 @@ export function ParcelPanel({
                           setConfirmDeleteId(null);
                           void onDeleteParcel(parcel.id);
                         }}
-                        className="rounded bg-[#b91c1c] px-1.5 py-0.5 text-[10px] font-semibold text-white hover:bg-[#991b1b] cursor-pointer"
+                        className="rounded bg-[#b91c1c] px-2 py-0.5 text-xs font-semibold text-white hover:bg-[#991b1b] cursor-pointer"
                       >
                         {tr(language, 'Borrar', 'Delete')}
                       </button>
@@ -259,9 +289,9 @@ export function ParcelPanel({
                         type="button"
                         onClick={() => setConfirmDeleteId(null)}
                         aria-label={tr(language, 'Cancelar borrado', 'Cancel delete')}
-                        className="rounded border border-[#e3e6e1] bg-white p-0.5 text-[#475569] hover:text-[#111813] cursor-pointer"
+                        className="rounded border border-[#e3e6e1] bg-white p-1 text-[#475569] hover:text-[#111813] cursor-pointer"
                       >
-                        <X className="h-3 w-3" />
+                        <X className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   ) : (
@@ -273,7 +303,7 @@ export function ParcelPanel({
                         onClick={() => startEditParcel(parcel)}
                         className="rounded p-1 text-[#475569] hover:bg-white/80 hover:text-[#111813] cursor-pointer"
                       >
-                        <Pencil className="h-3 w-3" />
+                        <Pencil className="h-3.5 w-3.5" />
                       </button>
                       <button
                         type="button"
@@ -282,7 +312,7 @@ export function ParcelPanel({
                         onClick={() => setConfirmDeleteId(parcel.id)}
                         className="rounded p-1 text-[#475569] hover:bg-[#fee2e2] hover:text-[#b91c1c] cursor-pointer"
                       >
-                        <Trash2 className="h-3 w-3" />
+                        <Trash2 className="h-3.5 w-3.5" />
                       </button>
                     </div>
                   )}
@@ -294,27 +324,27 @@ export function ParcelPanel({
               type="button"
               onClick={startNewParcel}
               disabled={parcels.length >= 8 && !editingParcelId}
-              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#1b4332]/45 bg-white px-2.5 py-1.5 text-xs font-semibold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-50 cursor-pointer"
+              className="inline-flex items-center gap-1 rounded-lg border border-dashed border-[#1b4332]/45 bg-white px-3 py-1.5 text-xs font-semibold text-[#1b4332] hover:bg-[#e6f4ea] disabled:opacity-50 cursor-pointer sm:text-sm"
             >
-              <Plus className="h-3.5 w-3.5" />
+              <Plus className="h-4 w-4" />
               <span>{tr(language, 'Nuevo campo', 'New field')}</span>
             </button>
           </div>
         </div>
 
         {/* 2. Weather scenario buttons */}
-        <div className="shrink-0 space-y-1.5 border-t border-[#e3e6e1] pt-2.5 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
+        <div className="shrink-0 space-y-2 border-t border-[#e3e6e1] pt-3 xl:border-l xl:border-t-0 xl:pl-4 xl:pt-0">
           <div className="flex items-center justify-between gap-2">
-            <span className="text-xs font-bold text-[#111813]">
-              {tr(language, '2. Simula el clima', '2. Simulate weather')}
+            <span className="text-xs font-bold text-[#111813] sm:text-sm">
+              {tr(language, 'Escenario climático (Antes vs. Después)', 'Climate scenario (Before vs. After)')}
             </span>
             <button
               type="button"
               onClick={onRunAnalysis}
               disabled={!focusedParcelId}
-              className="inline-flex items-center gap-1 text-[11px] font-semibold text-[#1b4332] hover:underline disabled:opacity-40 cursor-pointer"
+              className="inline-flex items-center gap-1 text-xs font-semibold text-[#1b4332] hover:underline disabled:opacity-40 cursor-pointer"
             >
-              <RefreshCw className="h-3 w-3" />
+              <RefreshCw className="h-3.5 w-3.5" />
               <span>{tr(language, 'Actualizar', 'Refresh')}</span>
             </button>
           </div>
@@ -322,46 +352,37 @@ export function ParcelPanel({
           <div className="grid grid-cols-3 gap-1.5">
             <button
               type="button"
-              onClick={() => {
-                onChangeRain(0);
-                onChangeTemp(0);
-              }}
-              aria-pressed={rainDeltaPct === 0 && tempDeltaC === 0}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
-                rainDeltaPct === 0 && tempDeltaC === 0
+              onClick={() => onChangeScenario(0, 0)}
+              aria-pressed={!scenarioActive}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors cursor-pointer ${
+                !scenarioActive
                   ? 'border-[#1b4332] bg-[#e6f4ea] text-[#14532d] font-bold'
                   : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] font-medium hover:bg-[#f0f2ee]'
               }`}
             >
               <Sun className="h-3.5 w-3.5 text-[#1b4332]" />
-              <span>{tr(language, 'Normal', 'Normal')}</span>
+              <span>{tr(language, 'Clima actual', 'Current')}</span>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                onChangeRain(-25);
-                onChangeTemp(1.5);
-              }}
-              aria-pressed={rainDeltaPct === -25 && tempDeltaC === 1.5}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
-                rainDeltaPct === -25 && tempDeltaC === 1.5
+              onClick={() => onChangeScenario(-25, 1.5)}
+              aria-pressed={isDrought}
+              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors cursor-pointer ${
+                isDrought
                   ? 'border-[#b45309] bg-[#fef3c7] text-[#92400e] font-bold'
                   : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] font-medium hover:bg-[#fef3c7]/60'
               }`}
             >
               <Flame className="h-3.5 w-3.5 text-[#b45309]" />
-              <span>{tr(language, 'Sequía -25%', 'Drought -25%')}</span>
+              <span>{tr(language, 'Sequía −25%', 'Drought −25%')}</span>
             </button>
 
             <button
               type="button"
-              onClick={() => {
-                onChangeRain(20);
-                onChangeTemp(0.5);
-              }}
+              onClick={() => onChangeScenario(20, 0.5)}
               aria-pressed={rainDeltaPct === 20 && tempDeltaC === 0.5}
-              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-2.5 py-1.5 text-xs transition-colors cursor-pointer ${
+              className={`inline-flex items-center justify-center gap-1.5 rounded-lg border px-3 py-2 text-xs transition-colors cursor-pointer ${
                 rainDeltaPct === 20 && tempDeltaC === 0.5
                   ? 'border-[#1d4ed8] bg-[#dbeafe] text-[#1e3a8a] font-bold'
                   : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] font-medium hover:bg-[#dbeafe]/60'
@@ -374,17 +395,136 @@ export function ParcelPanel({
         </div>
       </div>
 
+      {/* Persistent Before vs After Scenario Strip */}
+      {scenarioActive && baselineData && activeData ? (
+        <div className="rounded-xl border border-[#fde68a] bg-[#fffbeb] p-3">
+          <div className="flex flex-wrap items-center justify-between gap-2 pb-2">
+            <span className="inline-flex items-center gap-1.5 text-xs font-bold text-[#92400e] sm:text-sm">
+              <ArrowLeftRight className="h-4 w-4" />
+              {tr(
+                language,
+                `Impacto lado a lado: Clima actual frente a ${isDrought ? 'Sequía −25% (+1.5 °C)' : `Lluvia ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% (+${tempDeltaC.toFixed(1)} °C)`}`,
+                `Side-by-side impact: Current climate vs. ${isDrought ? 'Drought −25% (+1.5 °C)' : `Rain ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% (+${tempDeltaC.toFixed(1)} °C)`}`,
+              )}
+            </span>
+            <button
+              type="button"
+              onClick={() => onChangeScenario(0, 0)}
+              className="rounded-md border border-[#fde68a] bg-white px-2.5 py-1 text-xs font-semibold text-[#92400e] hover:bg-[#fef3c7] cursor-pointer"
+            >
+              {tr(language, 'Volver a clima actual', 'Reset to current climate')}
+            </button>
+          </div>
+
+          <div className="grid grid-cols-1 gap-2 sm:grid-cols-2 lg:grid-cols-4">
+            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
+              <span className="block text-xs font-medium text-[#475569]">
+                {tr(language, 'Lluvia anual', 'Annual rainfall')}
+              </span>
+              <div className="mt-1 flex items-center gap-1.5 font-mono text-xs font-bold text-[#111813] tabular-nums sm:text-sm">
+                <span>{baselineData.diagnosis.annual_precip_mm} mm</span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#b45309]" />
+                <span className={isDrought ? 'text-[#b45309]' : 'text-[#1d4ed8]'}>
+                  {activeData.diagnosis.annual_precip_mm} mm
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
+              <span className="block text-xs font-medium text-[#475569]">
+                {tr(language, 'Balance hídrico (P − ET)', 'Water balance (P − ET)')}
+              </span>
+              <div className="mt-1 flex items-center gap-1.5 font-mono text-xs font-bold text-[#111813] tabular-nums sm:text-sm">
+                <span>
+                  {baselineData.diagnosis.annual_water_balance_mm > 0 ? '+' : ''}
+                  {baselineData.diagnosis.annual_water_balance_mm} mm
+                </span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#b45309]" />
+                <span
+                  className={
+                    activeData.diagnosis.annual_water_balance_mm <
+                    baselineData.diagnosis.annual_water_balance_mm
+                      ? 'text-[#b91c1c]'
+                      : 'text-[#15803d]'
+                  }
+                >
+                  {activeData.diagnosis.annual_water_balance_mm > 0 ? '+' : ''}
+                  {activeData.diagnosis.annual_water_balance_mm} mm
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
+              <span className="block text-xs font-medium text-[#475569]">
+                {tr(language, 'Meses secos al año', 'Dry months / year')}
+              </span>
+              <div className="mt-1 flex items-center gap-1.5 font-mono text-xs font-bold text-[#111813] tabular-nums sm:text-sm">
+                <span>{baselineData.diagnosis.dry_months.length}m</span>
+                <ArrowRight className="h-3.5 w-3.5 text-[#b45309]" />
+                <span
+                  className={
+                    activeData.diagnosis.dry_months.length > baselineData.diagnosis.dry_months.length
+                      ? 'text-[#b91c1c]'
+                      : 'text-[#15803d]'
+                  }
+                >
+                  {activeData.diagnosis.dry_months.length}m
+                </span>
+              </div>
+            </div>
+
+            <div className="rounded-lg border border-[#fde68a]/80 bg-white px-3 py-2">
+              <span className="block text-xs font-medium text-[#475569]">
+                {tr(language, '¿Cambia la recomendación?', 'Recommendation shift?')}
+              </span>
+              <div className="mt-1 text-xs font-bold text-[#14532d]">
+                {baseTop && activeTop && baseTop.id !== activeTop.id ? (
+                  <span>
+                    {baseTop.name} → {activeTop.name} ({Math.round(activeTop.fit_score)}/100)
+                  </span>
+                ) : activeTop ? (
+                  <span>
+                    {activeTop.name} ({baseTop ? `${Math.round(baseTop.fit_score)} → ` : ''}
+                    {Math.round(activeTop.fit_score)}/100)
+                  </span>
+                ) : (
+                  '—'
+                )}
+              </div>
+            </div>
+          </div>
+        </div>
+      ) : (
+        <div className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-[#e3e6e1] bg-[#fafaf8] px-3 py-2 text-xs text-[#475569]">
+          <span>
+            {tr(
+              language,
+              'Modo base (Clima histórico 30a). Activa Sequía −25% para comparar el antes y después en la parcela seleccionada.',
+              'Baseline mode (30y historical climate). Activate Drought −25% to compare before and after side by side.',
+            )}
+          </span>
+          <button
+            type="button"
+            onClick={() => onChangeScenario(-25, 1.5)}
+            className="inline-flex items-center gap-1 rounded-md border border-[#fde68a] bg-[#fffbeb] px-2.5 py-1 text-xs font-semibold text-[#92400e] hover:bg-[#fef3c7] cursor-pointer"
+          >
+            <Flame className="h-3.5 w-3.5" />
+            {tr(language, 'Probar Clima actual vs. Sequía −25%', 'Test Current vs. Drought −25%')}
+          </button>
+        </div>
+      )}
+
       {/* Expandable drawer for creating / editing a field */}
       {formOpen && (
-        <form onSubmit={handleSave} className="mt-4 space-y-3 border-t border-[#e3e6e1] pt-3.5">
+        <form onSubmit={handleSave} className="mt-2 space-y-3 border-t border-[#e3e6e1] pt-3.5">
           <div className="flex flex-wrap items-center justify-between gap-2">
             <div className="flex flex-wrap items-center gap-2">
-              <h3 className="text-xs font-bold text-[#111813]">
+              <h3 className="text-xs font-bold text-[#111813] sm:text-sm">
                 {editingParcelId
                   ? tr(language, 'Editar campo seleccionado', 'Edit selected field')
                   : tr(language, 'Registrar nuevo campo', 'Register new field')}
               </h3>
-              <span className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2 py-0.5 font-mono text-[11px] text-[#1b4332] tabular-nums">
+              <span className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2 py-0.5 font-mono text-xs text-[#1b4332] tabular-nums">
                 {selectedLat.toFixed(4)}, {selectedLon.toFixed(4)}
               </span>
             </div>
@@ -392,7 +532,7 @@ export function ParcelPanel({
             <div className="flex flex-wrap items-center gap-1.5">
               {!editingParcelId && (
                 <>
-                  <span className="text-[11px] text-[#475569]">
+                  <span className="text-xs text-[#475569]">
                     {tr(language, 'Ejemplos:', 'Examples:')}
                   </span>
                   <button
@@ -408,9 +548,9 @@ export function ParcelPanel({
                       setAreaHa('2.5');
                       setPlantingMonth('10');
                     }}
-                    className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2 py-0.5 text-[11px] font-medium text-[#111813] hover:bg-[#e6f4ea] cursor-pointer"
+                    className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2.5 py-1 text-xs font-medium text-[#111813] hover:bg-[#e6f4ea] cursor-pointer"
                   >
-                    Mantaro
+                    Mantaro (Sierra · Papa)
                   </button>
                   <button
                     type="button"
@@ -425,26 +565,9 @@ export function ParcelPanel({
                       setAreaHa('4.0');
                       setPlantingMonth('1');
                     }}
-                    className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2 py-0.5 text-[11px] font-medium text-[#111813] hover:bg-[#e6f4ea] cursor-pointer"
+                    className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2.5 py-1 text-xs font-medium text-[#111813] hover:bg-[#e6f4ea] cursor-pointer"
                   >
-                    Piura
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => {
-                      onSelectCoords(-13.3144, -72.0947, true);
-                      setParcelName('Urubamba — Maíz');
-                      setCurrentCrop('maize_continuous');
-                      setIrrigation('limited');
-                      setSoilTexture('loam');
-                      setPriority('water');
-                      setHasLivestock(true);
-                      setAreaHa('1.8');
-                      setPlantingMonth('9');
-                    }}
-                    className="rounded border border-[#e3e6e1] bg-[#fafaf8] px-2 py-0.5 text-[11px] font-medium text-[#111813] hover:bg-[#e6f4ea] cursor-pointer"
-                  >
-                    Cusco
+                    Piura (Costa · Arroz)
                   </button>
                 </>
               )}
@@ -453,7 +576,7 @@ export function ParcelPanel({
                 <button
                   type="button"
                   onClick={cancelForm}
-                  className="ml-2 text-[11px] font-semibold text-[#475569] hover:text-[#111813] cursor-pointer"
+                  className="ml-2 text-xs font-semibold text-[#475569] hover:text-[#111813] cursor-pointer"
                 >
                   {tr(language, 'Cerrar', 'Close')}
                 </button>
@@ -463,7 +586,7 @@ export function ParcelPanel({
 
           <div className="grid grid-cols-1 gap-2.5 sm:grid-cols-2 md:grid-cols-4 lg:grid-cols-7">
             <div className="sm:col-span-2">
-              <Label htmlFor="parcelName" className="text-[11px]">
+              <Label htmlFor="parcelName" className="text-xs">
                 {tr(language, 'Nombre del campo', 'Field name')}
               </Label>
               <Input
@@ -480,7 +603,7 @@ export function ParcelPanel({
             </div>
 
             <div>
-              <Label htmlFor="currentCrop" className="text-[11px]">
+              <Label htmlFor="currentCrop" className="text-xs">
                 {tr(language, 'Qué tiene ahora', 'Current crop')}
               </Label>
               <select
@@ -498,7 +621,7 @@ export function ParcelPanel({
             </div>
 
             <div>
-              <Label htmlFor="irrigation" className="text-[11px]">
+              <Label htmlFor="irrigation" className="text-xs">
                 {tr(language, 'Riego', 'Irrigation')}
               </Label>
               <select
@@ -514,7 +637,7 @@ export function ParcelPanel({
             </div>
 
             <div>
-              <Label htmlFor="soilTexture" className="text-[11px]">
+              <Label htmlFor="soilTexture" className="text-xs">
                 {tr(language, 'Tipo de tierra', 'Soil type')}
               </Label>
               <select
@@ -531,7 +654,7 @@ export function ParcelPanel({
             </div>
 
             <div>
-              <Label htmlFor="priority" className="text-[11px]">
+              <Label htmlFor="priority" className="text-xs">
                 {tr(language, 'Prioridad', 'Priority')}
               </Label>
               <select
@@ -548,7 +671,7 @@ export function ParcelPanel({
             </div>
 
             <div>
-              <Label htmlFor="areaHa" className="text-[11px]">
+              <Label htmlFor="areaHa" className="text-xs">
                 {tr(language, 'Hectáreas (opc.)', 'Hectares (opt.)')}
               </Label>
               <Input
@@ -568,7 +691,7 @@ export function ParcelPanel({
           <div className="flex flex-wrap items-center justify-between gap-3 pt-1">
             <div className="flex flex-wrap items-center gap-4">
               <div className="flex items-center gap-2">
-                <Label htmlFor="plantingMonth" className="text-[11px] whitespace-nowrap">
+                <Label htmlFor="plantingMonth" className="text-xs whitespace-nowrap">
                   {tr(language, 'Mes de siembra:', 'Planting month:')}
                 </Label>
                 <select

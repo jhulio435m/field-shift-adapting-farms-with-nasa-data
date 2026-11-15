@@ -1,20 +1,46 @@
 # Field Shift: Adapting Farms with NASA Data
 
-Decision support for farmers exploring climate-aware crop rotations. The app
-combines NASA POWER observations, terrain information, recent Sentinel-2 point
-NDVI, and a seven-day forecast with farmer priorities and local soil input.
-It compares the current rotation with alternatives, explains evidence and gaps,
-and keeps local agronomic review explicit. The interface and analysis are
-available in Spanish and English.
+Agricultural decision-support prototype for farmers exploring climate-resilient crop rotations. Field Shift translates NASA satellite & agro-climatic observations into clear planting comparisons, scenario stress tests (normal climate vs. `-25%` drought), and accessible voice guidance.
 
-This repository contains a prototype for the NASA Space Apps challenge of the
-same name. It does **not** confirm planting decisions or replace field data.
-If NASA POWER is unavailable, the API returns 503 instead of presenting
-synthetic values as observations.
+## Data Sources & Simulation Transparency
 
-## Run locally
+- **30-year agro-climatology (historical baseline):** NASA POWER Agroclimatology API (`T2M`, `T2M_MIN`, `T2M_MAX`, `PRECTOTCORR`, `GWETTOP`, `GWETROOT`, `EVPTRNS`, `ALLSKY_SFC_SW_DWN`, `RH2M`). If NASA POWER is unavailable, the backend returns HTTP `503` instead of fabricating synthetic climate readings; the frontend falls back only to explicitly labeled **verified historical captures** saved earlier for continuity during demos.
+- **20-year climate trend & soil correlation (2005–2024):** NASA POWER Monthly historical series (`_pearson_r` rain-to-root-moisture correlation and decade temperature slope).
+- **Dated vegetation pass:** Recent cloud-filtered Sentinel-2 L2A point NDVI (`<25%` cloud cover) displaying its exact observation date.
+- **Map overlays (explicit mosaic dates):** NASA GIBS WMTS layers (GPM IMERG precipitation, SMAP L4 root-zone soil moisture, MODIS LST nighttime temp, MODIS NDVI 16-Day, MODIS Bands 7-2-1) with selectable dated mosaics (`2026-07-01`, `2026-02-15`, `2025-07-01`).
+- **Terrain & 7-day forecast:** Copernicus/SRTM DEM slope (`%` and erosion risk) and 7-day Open-Meteo weather alerts.
+- **Kusi Kusi Mobile Simulator:** Local browser simulation (rule-grounded responses + Web Speech API audio) using the live NASA diagnosis computed by the backend.
 
-Requires Python 3.11+ and [`uv`](https://docs.astral.sh/uv/).
+> **Disclaimer:** This prototype supports field exploration and **does not** replace farmer judgment or local agronomic review (seed availability, soil lab checks, planting dates).
+
+---
+
+## Run with Docker (Recommended for Demo)
+
+Builds the Vite + React + TypeScript frontend (`frontend/dist`) and serves it directly through FastAPI on port `8000`:
+
+```sh
+docker compose up -d --build field-shift
+```
+
+Open `http://127.0.0.1:8000` (or verify health at `http://127.0.0.1:8000/health`), then click **Entrar a la Demo en 1 Clic** to load both contrasting Peruvian fields without phone verification:
+- **Lote Mantaro — Papa** (`-12.0650, -75.2049`, Andean highlands, rainfed)
+- **Valle Piura — Arroz** (`-5.1945, -80.6328`, coastal valley, irrigated)
+
+---
+
+## Run Locally (Development)
+
+### 1. Build React Frontend
+Note: `app/main.py` serves `frontend/dist/index.html` when built; make sure `npm run build` is executed so the React app (rather than legacy static HTML) is served.
+
+```sh
+cd frontend
+npm ci
+npm run build
+```
+
+### 2. Run FastAPI Backend & Tests
 
 ```sh
 cd backend
@@ -22,24 +48,17 @@ uv sync --dev
 uv run uvicorn app.main:app --host 127.0.0.1 --port 8000
 ```
 
-Open `http://127.0.0.1:8000`. The API schema is at `/openapi.json`.
+Run backend test suite:
 
 ```sh
 cd backend
 uv run pytest -q
 ```
 
-## Kusi Kusi and farmer registration
+Open `http://127.0.0.1:8000`. OpenAPI schema is available at `http://127.0.0.1:8000/openapi.json`.
 
-Field Shift includes a read-only adaptive source bridge and a parcel workflow.
-After verification, a farmer can save up to eight fields, select one or more,
-and review a separate NASA-based rotation analysis for each selected field.
-Kusi Kusi remains responsible for verified WhatsApp identity and messaging.
-The real channel callback, signed proof delivery, and source enrollment with
-per-user access controls are **not yet connected**. Without a configured
-`FIELD_SHIFT_KUSI_VERIFY_KEY`, registration fails closed. See
-[the integration contract](specs/001-field-shift-mvp/kusi-integration.md) and
-[remaining tasks](specs/001-field-shift-mvp/tasks.md).
+---
 
-Local farmer data are stored in `backend/.local-data/` and excluded from Git.
-Do not put real phone numbers, secrets, or parcel records in this repository.
+## Kusi Kusi Onboarding Bridge
+
+Field Shift stores farmer profiles locally in `backend/.local-data/` (excluded from Git). Real WhatsApp/Telegram identity verification connects via Kusi Kusi (`POST /v1/onboarding/confirm` with `FIELD_SHIFT_KUSI_VERIFY_KEY`), while `/v1/onboarding/demo` provides instant 1-click access for hackathon demonstrations.

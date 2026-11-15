@@ -206,8 +206,8 @@ export function OnboardingForm({ language, onVerified }: OnboardingFormProps) {
             <p className="max-w-xl text-sm leading-relaxed text-[#dcfce7]">
               {tr(
                 language,
-                'Explora al instante sin esperar códigos por teléfono. Incluye dos parcelas reales en Perú (Lote Mantaro — Papa y Valle Piura — Arroz) conectadas en vivo a NASA POWER, SRTM, Sentinel-2 NDVI y el simulador de alertas Kusi Kusi.',
-                'Explore immediately with no phone verification wait. Includes two Peruvian fields (Mantaro — Potato and Piura Valley — Rice) connected live to NASA POWER, SRTM, Sentinel-2 NDVI, and the Kusi Kusi bot simulator.',
+                'Explora al instante sin registro previo. Compara dos regiones contrastantes de Perú (Lote Mantaro — Papa en sierra de secano y Valle Piura — Arroz bajo riego) combinando climatología histórica NASA POWER (30 años), tendencia 2005–2024, relieve SRTM, observación reciente Sentinel-2 NDVI, pronóstico a 7 días y el simulador local de voz Kusi Kusi.',
+                'Explore instantly without registration. Compare two contrasting regions in Peru (Mantaro — Rainfed Highland Potato and Piura Valley — Irrigated Coastal Rice) combining 30-year NASA POWER climatology, 2005–2024 trends, SRTM terrain slope, dated Sentinel-2 NDVI, a 7-day forecast, and the local Kusi Kusi voice simulator.',
               )}
             </p>
           </div>
@@ -230,8 +230,8 @@ export function OnboardingForm({ language, onVerified }: OnboardingFormProps) {
           <span className="text-xs text-[#bbf7d0]">
             {tr(
               language,
-              'Sin registro previo · Datos satelitales en tiempo real',
-              'No signup required · Real-time satellite data',
+              'Sin registro · Datos NASA + Simulador local Kusi Kusi',
+              'No signup · NASA climate data + local Kusi Kusi simulator',
             )}
           </span>
         </div>

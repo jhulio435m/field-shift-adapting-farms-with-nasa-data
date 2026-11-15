@@ -63,16 +63,46 @@ function formatCurrentTime(): string {
 }
 
 function getBestNonCurrentStrategy(strategies: RotationStrategy[]): RotationStrategy | undefined {
-  return strategies.find((s) => !s.is_current) ?? strategies[0];
+  const nonCurrent = strategies.filter((s) => !s.is_current);
+  return (nonCurrent.length ? [...nonCurrent].sort((a, b) => b.fit_score - a.fit_score)[0] : strategies[0]);
 }
 
-function buildFarmerVoicePrompt(language: Language, parcel: Parcel | null): string {
+function humanCropLabel(crop: Parcel['current_crop'] | undefined, language: Language): string {
+  switch (crop) {
+    case 'potato_continuous':
+      return tr(language, 'papa continua', 'continuous potato');
+    case 'rice_continuous':
+      return tr(language, 'arroz continuo', 'continuous rice');
+    case 'wheat_continuous':
+      return tr(language, 'trigo / cereal', 'continuous wheat');
+    case 'mixed_vegetables':
+      return tr(language, 'hortalizas mixtas', 'mixed vegetables');
+    case 'maize_continuous':
+    default:
+      return tr(language, 'maíz continuo', 'continuous maize');
+  }
+}
+
+function buildFarmerVoicePrompt(
+  language: Language,
+  parcel: Parcel | null,
+  rainDeltaPct: number,
+  tempDeltaC: number
+): string {
   const parcelName = parcel?.name ?? tr(language, 'mi parcela', 'my field');
-  const cropName = parcel?.current_crop ?? tr(language, 'cultivo actual', 'current crop');
+  const cropName = humanCropLabel(parcel?.current_crop, language);
+  const scenarioClause =
+    rainDeltaPct < 0
+      ? tr(language, ` si baja la lluvia un ${Math.abs(rainDeltaPct)}%`, ` if rain drops ${Math.abs(rainDeltaPct)}%`)
+      : rainDeltaPct > 0
+        ? tr(language, ` si llueve ${rainDeltaPct}% más`, ` if rain increases ${rainDeltaPct}%`)
+        : tempDeltaC > 0
+          ? tr(language, ` con +${tempDeltaC.toFixed(1)} °C`, ` with +${tempDeltaC.toFixed(1)} °C`)
+          : '';
   return tr(
     language,
-    `Hola Kusi, estoy revisando ${parcelName} (${cropName}). ¿Qué rotación me recomiendas según los datos NASA de lluvia, calor y humedad del suelo?`,
-    `Hi Kusi, I am checking ${parcelName} (${cropName}). What rotation do you recommend based on NASA rainfall, heat, and soil moisture data?`
+    `Hola Kusi, reviso ${parcelName} (${cropName}). ¿Qué alternativa de rotación podría considerar${scenarioClause}?`,
+    `Hi Kusi, checking ${parcelName} (${cropName}). What rotation alternative should I consider${scenarioClause}?`
   );
 }
 
@@ -94,23 +124,23 @@ function buildBotVoiceGreeting(
     rainDeltaPct !== 0 || tempDeltaC !== 0
       ? tr(
           language,
-          ` Escenario simulado: lluvia ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% y temperatura +${tempDeltaC.toFixed(1)} °C.`,
-          ` Simulated scenario: rainfall ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% and temp +${tempDeltaC.toFixed(1)} °C.`
+          ` Bajo escenario de lluvia ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% y +${tempDeltaC.toFixed(1)} °C:`,
+          ` Under simulated rain ${rainDeltaPct > 0 ? `+${rainDeltaPct}` : rainDeltaPct}% and +${tempDeltaC.toFixed(1)} °C:`
         )
       : '';
 
   if (viewMode === 'agronomist') {
     return tr(
       language,
-      `Resumen técnico NASA para ${parcelTitle}: lluvia ${diagnosis.annual_precip_mm} mm, ET ${diagnosis.annual_et_mm} mm, balance ${diagnosis.annual_water_balance_mm} mm, humedad radicular ${soilRootPct}%, T media ${diagnosis.annual_temp_mean_c} °C.${corr ? ` Correlación lluvia-humedad r=${corr.rain_soil_moisture_corr.toFixed(2)}.` : ''}${top ? ` Opción líder: ${top.name} (${Math.round(top.fit_score)}/100).` : ''}${scenarioNote}`,
-      `Technical NASA brief for ${parcelTitle}: rainfall ${diagnosis.annual_precip_mm} mm, ET ${diagnosis.annual_et_mm} mm, balance ${diagnosis.annual_water_balance_mm} mm, root moisture ${soilRootPct}%, mean T ${diagnosis.annual_temp_mean_c} °C.${corr ? ` Rain-moisture corr r=${corr.rain_soil_moisture_corr.toFixed(2)}.` : ''}${top ? ` Top option: ${top.name} (${Math.round(top.fit_score)}/100).` : ''}${scenarioNote}`
+      `Resumen NASA para ${parcelTitle}:${scenarioNote} lluvia 30a ${diagnosis.annual_precip_mm} mm, ET ${diagnosis.annual_et_mm} mm, balance ${diagnosis.annual_water_balance_mm} mm, humedad en raíz ${soilRootPct}%.${corr ? ` Correlación 20a lluvia-humedad r=${corr.rain_soil_moisture_corr.toFixed(2)}.` : ''}${top ? ` Alternativa con mayor adecuación en el modelo: ${top.name} (${Math.round(top.fit_score)}/100).` : ''}`,
+      `NASA brief for ${parcelTitle}:${scenarioNote} 30y rain ${diagnosis.annual_precip_mm} mm, ET ${diagnosis.annual_et_mm} mm, balance ${diagnosis.annual_water_balance_mm} mm, root moisture ${soilRootPct}%.${corr ? ` 20y rain-moisture r=${corr.rain_soil_moisture_corr.toFixed(2)}.` : ''}${top ? ` Highest-fit model alternative: ${top.name} (${Math.round(top.fit_score)}/100).` : ''}`
     );
   }
 
   return tr(
     language,
-    `Reporte NASA listo para ${parcelTitle}. Lluvia anual ${diagnosis.annual_precip_mm} mm y humedad radicular ${soilRootPct}%.${top ? ` Mejor rotación: ${top.name} (${top.sequence.join(' -> ')}).` : ''}${alertText ? ` Aviso 7 días: ${alertText}` : ''}${scenarioNote}`,
-    `NASA report ready for ${parcelTitle}. Annual rainfall ${diagnosis.annual_precip_mm} mm and root soil moisture ${soilRootPct}%.${top ? ` Best rotation: ${top.name} (${top.sequence.join(' -> ')}).` : ''}${alertText ? ` 7-day notice: ${alertText}` : ''}${scenarioNote}`
+    `Para ${parcelTitle}:${scenarioNote} la NASA registra ${diagnosis.annual_precip_mm} mm de lluvia anual, ${diagnosis.dry_months.length} meses secos y ${soilRootPct}% de humedad en raíces.${top ? ` El modelo sugiere considerar ${top.name} (${top.sequence.join(' -> ')}) porque: ${top.why_suggested_farmer}` : ''}${alertText ? ` Aviso 7 días: ${alertText}` : ''}`,
+    `For ${parcelTitle}:${scenarioNote} NASA shows ${diagnosis.annual_precip_mm} mm annual rain, ${diagnosis.dry_months.length} dry months, and ${soilRootPct}% root moisture.${top ? ` You could consider ${top.name} (${top.sequence.join(' -> ')}) because: ${top.why_suggested_farmer}` : ''}${alertText ? ` 7-day alert: ${alertText}` : ''}`
   );
 }
 
@@ -121,17 +151,15 @@ function buildBotTextSummary(
   parcel: Parcel | null
 ): string {
   const top = getBestNonCurrentStrategy(strategies);
-  const soilRootPct = Math.round(diagnosis.avg_soil_moisture_root * 100);
-  const ndviLabel =
-    diagnosis.historical_correlation?.latest_ndvi !== null &&
-    diagnosis.historical_correlation?.latest_ndvi !== undefined
-      ? ` · NDVI ${diagnosis.historical_correlation.latest_ndvi.toFixed(2)}`
-      : '';
+  const checkNote =
+    top?.local_review_needed?.[0] ??
+    top?.information_gaps?.[0] ??
+    tr(language, 'Verificar humedad del suelo y disponibilidad local de semilla.', 'Confirm local soil moisture and seed availability.');
 
   return tr(
     language,
-    `${parcel?.name ?? 'Parcela'}: Lluvia ${diagnosis.annual_precip_mm} mm · ET ${diagnosis.annual_et_mm} mm · Temp ${diagnosis.annual_temp_mean_c} °C · Suelo ${soilRootPct}%${ndviLabel}.${top ? `\nSugerencia principal: ${top.name} (${Math.round(top.fit_score)}/100).` : ''}`,
-    `${parcel?.name ?? 'Field'}: Rain ${diagnosis.annual_precip_mm} mm · ET ${diagnosis.annual_et_mm} mm · Temp ${diagnosis.annual_temp_mean_c} °C · Soil ${soilRootPct}%${ndviLabel}.${top ? `\nTop suggestion: ${top.name} (${Math.round(top.fit_score)}/100).` : ''}`
+    `${parcel?.name ?? 'Parcela'} (${diagnosis.dry_months.length} meses secos · balance ${diagnosis.annual_water_balance_mm > 0 ? '+' : ''}${diagnosis.annual_water_balance_mm} mm)\nAlternativa con mayor adecuación en modelo: ${top ? `${top.name} (${Math.round(top.fit_score)}/100)` : 'N/D'}.\nValidar en campo con un agrónomo: ${checkNote}`,
+    `${parcel?.name ?? 'Field'} (${diagnosis.dry_months.length} dry mo · balance ${diagnosis.annual_water_balance_mm > 0 ? '+' : ''}${diagnosis.annual_water_balance_mm} mm)\nHighest-fit model option: ${top ? `${top.name} (${Math.round(top.fit_score)}/100)` : 'N/A'}.\nVerify with an agronomist in field: ${checkNote}`
   );
 }
 
@@ -146,7 +174,7 @@ function buildBotReply(
   tempDeltaC: number
 ): string {
   const q = prompt.toLowerCase();
-  const nonCurrent = strategies.filter((s) => !s.is_current);
+  const nonCurrent = [...strategies.filter((s) => !s.is_current)].sort((a, b) => b.fit_score - a.fit_score);
   const top = nonCurrent[0] ?? strategies[0];
   const second = nonCurrent[1] ?? strategies[1];
   const alert = diagnosis?.weekly_alerts;
@@ -469,7 +497,7 @@ export function KusiSimulator({
         id: 'farmer-init-voice',
         sender: 'farmer',
         kind: 'voice',
-        text: buildFarmerVoicePrompt(language, parcel),
+        text: buildFarmerVoicePrompt(language, parcel, rainDeltaPct, tempDeltaC),
         durationLabel: '0:18',
         time: '10:28 AM',
         waveformSeed: 1,
@@ -684,7 +712,7 @@ export function KusiSimulator({
   const botTitle = parcel ? `Kusi Kusi · ${parcel.name}` : 'Kusi Kusi · NASA';
   const statusSubtitle = loading
     ? tr(language, 'Calculando NASA...', 'Updating NASA...')
-    : tr(language, `En línea · ${channelLabel}`, `Online · ${channelLabel}`);
+    : tr(language, `Simulador ${channelLabel} · Reglas + Voz`, `${channelLabel} Simulator · Rules + Voice`);
 
   return (
     <section aria-label={tr(language, 'Simulador móvil Kusi Kusi', 'Kusi Kusi mobile simulator')} className="space-y-3">
@@ -763,6 +791,13 @@ export function KusiSimulator({
 
           {/* Warm WhatsApp chat canvas */}
           <div className="h-[360px] space-y-2.5 overflow-y-auto bg-[#efeae2] px-3 py-3">
+            <div className="mx-auto max-w-[94%] rounded-lg bg-[#fff8dc] px-2.5 py-1.5 text-center text-[11px] font-medium leading-snug text-[#5c4813] shadow-[0_1px_1px_rgba(15,23,42,0.06)]">
+              {tr(
+                language,
+                'Simulador local (reglas + voz del navegador) conectado al diagnóstico NASA del campo.',
+                'Local simulator (rules + browser speech) grounded in live NASA field telemetry.'
+              )}
+            </div>
             {messages.map((msg) => {
               if (msg.kind === 'voice') {
                 return (

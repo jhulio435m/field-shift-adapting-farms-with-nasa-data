@@ -1,5 +1,14 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { Bell, LogOut, Smartphone, Sprout } from 'lucide-react';
+import {
+  AlertTriangle,
+  Bell,
+  LogOut,
+  Microscope,
+  RefreshCw,
+  Smartphone,
+  Sprout,
+  UserCheck,
+} from 'lucide-react';
 import {
   analyzeParcel,
   createParcel,
@@ -17,6 +26,7 @@ import { ParcelPanel } from './components/ParcelPanel';
 import { Button } from './components/ui/button';
 import { Input } from './components/ui/input';
 import { Label } from './components/ui/label';
+import { getVerifiedSnapshot, saveVerifiedSnapshot } from './contingencySnapshots';
 import { tr } from './i18n';
 import type {
   AlertFrequencyType,
@@ -26,6 +36,7 @@ import type {
   Language,
   Parcel,
   RotationCompareResponse,
+  ViewMode,
 } from './types';
 
 const selectClass =
@@ -34,6 +45,9 @@ const selectClass =
 export default function App() {
   const [language, setLanguage] = useState<Language>(() =>
     localStorage.getItem('fieldShiftLanguage') === 'en' ? 'en' : 'es',
+  );
+  const [viewMode, setViewMode] = useState<ViewMode>(() =>
+    localStorage.getItem('fieldShiftViewMode') === 'agronomist' ? 'agronomist' : 'farmer',
   );
   const [profile, setProfile] = useState<FarmerProfile | null>(null);
   const [checkingSession, setCheckingSession] = useState(true);
@@ -51,7 +65,10 @@ export default function App() {
 
   const [analysisLoading, setAnalysisLoading] = useState(false);
   const [analysisError, setAnalysisError] = useState<string | null>(null);
+  const [baselineData, setBaselineData] = useState<RotationCompareResponse | null>(null);
   const [lastData, setLastData] = useState<RotationCompareResponse | null>(null);
+  const [isContingencySnapshot, setIsContingencySnapshot] = useState(false);
+  const [snapshotTimestamp, setSnapshotTimestamp] = useState<string | null>(null);
 
   const [showBotSettings, setShowBotSettings] = useState(false);
   const [botDraft, setBotDraft] = useState<BotConfig>({
@@ -73,10 +90,14 @@ export default function App() {
     document.documentElement.lang = language;
     document.title = tr(
       language,
-      'Field Shift — Monitoreo Satelital para el Campo',
-      'Field Shift — Satellite Field Monitoring',
+      'Field Shift — Decisiones Agrícolas con Datos NASA',
+      'Field Shift — Climate-Aware Crop Decisions with NASA Data',
     );
   }, [language]);
+
+  useEffect(() => {
+    localStorage.setItem('fieldShiftViewMode', viewMode);
+  }, [viewMode]);
 
   const loadProfile = useCallback(async () => {
     try {
@@ -115,12 +136,52 @@ export default function App() {
     ) => {
       if (!profile || !parcelId) return;
       const run = ++runIdRef.current;
-      const cacheKey = `${parcelId}:${rain}:${temp}:${lang}`;
-      const cached = !forceRefresh ? analysisCacheRef.current.get(cacheKey) : undefined;
-      if (cached) {
-        setLastData(cached);
+      const parcelObj = profile.parcels.find((p) => p.id === parcelId) ?? null;
+
+      async function resolveScenario(r: number, t: number): Promise<{
+        data: RotationCompareResponse;
+        contingency: boolean;
+        savedAt: string | null;
+      }> {
+        const cacheKey = `${parcelId}:${r}:${t}:${lang}`;
+        const cached = !forceRefresh ? analysisCacheRef.current.get(cacheKey) : undefined;
+        if (cached) {
+          return { data: cached, contingency: false, savedAt: null };
+        }
+        try {
+          const liveResult = await analyzeParcel(
+            parcelId!,
+            { rain_delta_pct: r, temp_delta_c: t, language: lang },
+            profile!.csrf,
+          );
+          analysisCacheRef.current.set(cacheKey, liveResult);
+          if (parcelObj) {
+            saveVerifiedSnapshot(parcelObj, r, t, lang, liveResult);
+          }
+          return { data: liveResult, contingency: false, savedAt: null };
+        } catch (err) {
+          const fallback = getVerifiedSnapshot(parcelObj, r, t, lang);
+          if (fallback) {
+            return { data: fallback.data, contingency: true, savedAt: fallback.savedAt };
+          }
+          throw err;
+        }
+      }
+
+      const activeCached = !forceRefresh
+        ? analysisCacheRef.current.get(`${parcelId}:${rain}:${temp}:${lang}`)
+        : undefined;
+      const baseCached = !forceRefresh
+        ? analysisCacheRef.current.get(`${parcelId}:0:0:${lang}`)
+        : undefined;
+
+      if (activeCached && (rain === 0 && temp === 0 ? true : baseCached !== undefined)) {
+        setLastData(activeCached);
+        setBaselineData(rain === 0 && temp === 0 ? activeCached : (baseCached ?? null));
         setAnalysisError(null);
         setAnalysisLoading(false);
+        setIsContingencySnapshot(false);
+        setSnapshotTimestamp(null);
         return;
       }
 
@@ -128,18 +189,31 @@ export default function App() {
       setAnalysisError(null);
 
       try {
-        const result = await analyzeParcel(
-          parcelId,
-          { rain_delta_pct: rain, temp_delta_c: temp, language: lang },
-          profile.csrf,
-        );
-        if (run !== runIdRef.current) return;
-        analysisCacheRef.current.set(cacheKey, result);
-        setLastData(result);
+        if (rain === 0 && temp === 0) {
+          const res = await resolveScenario(0, 0);
+          if (run !== runIdRef.current) return;
+          setLastData(res.data);
+          setBaselineData(res.data);
+          setIsContingencySnapshot(res.contingency);
+          setSnapshotTimestamp(res.savedAt);
+        } else {
+          const [activeRes, baseRes] = await Promise.all([
+            resolveScenario(rain, temp),
+            resolveScenario(0, 0).catch(() => null),
+          ]);
+          if (run !== runIdRef.current) return;
+          setLastData(activeRes.data);
+          setBaselineData(baseRes?.data ?? null);
+          setIsContingencySnapshot(activeRes.contingency || Boolean(baseRes?.contingency));
+          setSnapshotTimestamp(activeRes.savedAt ?? baseRes?.savedAt ?? null);
+        }
       } catch (error) {
         if (run !== runIdRef.current) return;
         const message = error instanceof Error ? error.message : String(error);
         setLastData(null);
+        setBaselineData(null);
+        setIsContingencySnapshot(false);
+        setSnapshotTimestamp(null);
         setAnalysisError(message);
       } finally {
         if (run === runIdRef.current) {
@@ -153,12 +227,15 @@ export default function App() {
   useEffect(() => {
     if (!profile || !focusedParcelId) {
       setLastData(null);
+      setBaselineData(null);
       setAnalysisError(null);
+      setIsContingencySnapshot(false);
+      setSnapshotTimestamp(null);
       return;
     }
     const timer = window.setTimeout(() => {
       void runAnalysis(focusedParcelId, rainDeltaPct, tempDeltaC, language);
-    }, 200);
+    }, 180);
     return () => window.clearTimeout(timer);
   }, [profile, focusedParcelId, rainDeltaPct, tempDeltaC, language, runAnalysis]);
 
@@ -186,6 +263,11 @@ export default function App() {
     setSelectedLon(parcel.lon);
     setFocusedParcelId(id);
     setParcelStatus('');
+  }
+
+  function handleChangeScenario(rain: number, temp: number) {
+    setRainDeltaPct(rain);
+    setTempDeltaC(temp);
   }
 
   function invalidateParcelCache(parcelId: string) {
@@ -247,7 +329,6 @@ export default function App() {
       if (!nextFocused && remaining.length > 0) {
         nextFocused = remaining[0].id;
       }
-
       const nextFocusParcel = remaining.find((p) => p.id === nextFocused);
       if (nextFocusParcel) {
         setSelectedLat(nextFocusParcel.lat);
@@ -286,6 +367,9 @@ export default function App() {
       setProfile(null);
       setFocusedParcelId(null);
       setLastData(null);
+      setBaselineData(null);
+      setIsContingencySnapshot(false);
+      setSnapshotTimestamp(null);
       setAnalysisError(null);
       setParcelStatus('');
       setShowBotSettings(false);
@@ -303,27 +387,69 @@ export default function App() {
         : 'WhatsApp'
     : '';
 
+  const formattedSnapshotDate = snapshotTimestamp
+    ? new Date(snapshotTimestamp).toLocaleString(language === 'en' ? 'en-US' : 'es-PE', {
+        dateStyle: 'medium',
+        timeStyle: 'short',
+      })
+    : null;
+
   return (
     <div className="min-h-screen bg-[#fafaf8] text-[#111813]">
       <header className="sticky top-0 z-30 border-b border-[#e3e6e1] bg-white/95 backdrop-blur-sm">
         <div className="mx-auto flex max-w-[1680px] flex-wrap items-center justify-between gap-3 px-4 py-2.5 sm:px-6">
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <div className="flex h-7 w-7 items-center justify-center rounded-md bg-[#1b4332] text-white">
-                <Sprout className="h-4 w-4" />
+              <div className="flex h-8 w-8 items-center justify-center rounded-md bg-[#1b4332] text-white">
+                <Sprout className="h-4.5 w-4.5" />
               </div>
-              <span className="text-sm font-bold tracking-tight text-[#111813]">Field Shift</span>
+              <span className="text-base font-bold tracking-tight text-[#111813]">Field Shift</span>
             </div>
             <span className="hidden text-xs font-medium text-[#475569] md:inline">
               {tr(
                 language,
-                'Monitoreo Satelital NASA y Asistente de Voz por WhatsApp',
-                'NASA Satellite Monitoring & WhatsApp Voice Assistant',
+                'Centro de Decisiones Agrícolas con Datos NASA y Asistente de Voz',
+                'NASA Agro-Climate Decision Center & Voice Assistant',
               )}
             </span>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
+            {profile && (
+              <div
+                className="inline-flex rounded-lg border border-[#e3e6e1] bg-[#fafaf8] p-0.5"
+                role="group"
+                aria-label={tr(language, 'Nivel de lectura', 'Reading view mode')}
+              >
+                <button
+                  type="button"
+                  onClick={() => setViewMode('farmer')}
+                  aria-pressed={viewMode === 'farmer'}
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                    viewMode === 'farmer'
+                      ? 'bg-[#1b4332] text-white'
+                      : 'text-[#334155] hover:text-[#111813]'
+                  }`}
+                >
+                  <UserCheck className="h-3.5 w-3.5" />
+                  <span>{tr(language, 'Vista Agricultor', 'Farmer')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setViewMode('agronomist')}
+                  aria-pressed={viewMode === 'agronomist'}
+                  className={`inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-xs font-semibold transition-colors cursor-pointer ${
+                    viewMode === 'agronomist'
+                      ? 'bg-[#1b4332] text-white'
+                      : 'text-[#334155] hover:text-[#111813]'
+                  }`}
+                >
+                  <Microscope className="h-3.5 w-3.5" />
+                  <span>{tr(language, 'Vista Técnica', 'Technical')}</span>
+                </button>
+              </div>
+            )}
+
             {profile && (
               <button
                 type="button"
@@ -332,15 +458,15 @@ export default function App() {
                   setShowBotSettings((prev) => !prev);
                 }}
                 aria-expanded={showBotSettings}
-                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-[11px] font-semibold transition-colors cursor-pointer ${
+                className={`inline-flex items-center gap-1.5 rounded-full border px-3 py-1 text-xs font-semibold transition-colors cursor-pointer ${
                   showBotSettings
                     ? 'border-[#1b4332] bg-[#e6f4ea] text-[#143326]'
                     : 'border-[#e3e6e1] bg-[#fafaf8] text-[#111813] hover:bg-[#f0f2ee]'
                 }`}
               >
-                <Bell className="h-3 w-3 text-[#1b4332]" />
+                <Bell className="h-3.5 w-3.5 text-[#1b4332]" />
                 <span>
-                  {tr(language, 'Alertas', 'Alerts')}: {channelBadgeText}
+                  {tr(language, 'Canal:', 'Channel:')} {channelBadgeText}
                 </span>
               </button>
             )}
@@ -377,7 +503,7 @@ export default function App() {
               className="mx-auto flex max-w-[1680px] flex-wrap items-end gap-3 px-4 py-3 sm:px-6"
             >
               <div className="w-40">
-                <Label htmlFor="cfgChannel" className="text-[11px]">
+                <Label htmlFor="cfgChannel" className="text-xs">
                   {tr(language, 'Canal Kusi Kusi', 'Kusi Kusi channel')}
                 </Label>
                 <select
@@ -400,7 +526,7 @@ export default function App() {
               {(botDraft.preferred_channel === 'telegram' ||
                 botDraft.preferred_channel === 'both') && (
                 <div className="w-44">
-                  <Label htmlFor="cfgTelegram" className="text-[11px]">
+                  <Label htmlFor="cfgTelegram" className="text-xs">
                     {tr(language, 'Usuario Telegram', 'Telegram handle')}
                   </Label>
                   <Input
@@ -417,7 +543,7 @@ export default function App() {
               )}
 
               <div className="w-44">
-                <Label htmlFor="cfgFrequency" className="text-[11px]">
+                <Label htmlFor="cfgFrequency" className="text-xs">
                   {tr(language, 'Frecuencia alertas', 'Alert frequency')}
                 </Label>
                 <select
@@ -476,40 +602,68 @@ export default function App() {
 
         {profile && (
           <>
-            {/* Compact 3-Step Visual Guide */}
+            {/* 3-Moment Decision Journey Strip + Transparent Data Source Legend */}
             <div className="flex flex-wrap items-center justify-between gap-2 rounded-xl border border-[#e3e6e1] bg-white px-4 py-2.5 text-xs">
-              <div className="flex flex-wrap items-center gap-x-5 gap-y-1.5">
-                <span className="inline-flex items-center gap-2 font-medium text-[#111813]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-[11px] font-bold text-white">
+              <div className="flex flex-wrap items-center gap-x-6 gap-y-1.5">
+                <span className="inline-flex items-center gap-2 font-semibold text-[#111813]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-xs font-bold text-white">
                     1
                   </span>
-                  {tr(language, 'Elige tu campo en el mapa', 'Pick your field on the map')}
+                  {tr(language, 'Entender mi campo', 'Understand my field')}
                 </span>
-                <span className="inline-flex items-center gap-2 font-medium text-[#111813]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-[11px] font-bold text-white">
+                <span className="inline-flex items-center gap-2 font-semibold text-[#111813]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-xs font-bold text-white">
                     2
                   </span>
-                  {tr(
-                    language,
-                    'Revisa el agua, suelo, pasto y qué sembrar',
-                    'Check water, soil, pasture & crop advice',
-                  )}
+                  {tr(language, 'Comparar opciones', 'Compare rotations')}
                 </span>
-                <span className="inline-flex items-center gap-2 font-medium text-[#111813]">
-                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-[11px] font-bold text-white">
+                <span className="inline-flex items-center gap-2 font-semibold text-[#111813]">
+                  <span className="flex h-5 w-5 items-center justify-center rounded-full bg-[#1b4332] font-mono text-xs font-bold text-white">
                     3
                   </span>
-                  {tr(
-                    language,
-                    'Escucha el reporte de voz en WhatsApp',
-                    'Listen to the voice report on WhatsApp',
-                  )}
+                  {tr(language, 'Comprender qué hacer', 'Understand what to do')}
                 </span>
               </div>
-              <span className="font-mono text-[11px] text-[#475569]">NASA POWER · GIBS · SRTM</span>
+              <span className="font-mono text-xs text-[#475569]">
+                {tr(
+                  language,
+                  'NASA POWER 30a · Serie 2005–2024 · Sentinel-2 NDVI · Pronóstico 7d',
+                  'NASA POWER 30y · 2005–2024 Series · Sentinel-2 NDVI · 7d Forecast',
+                )}
+              </span>
             </div>
 
-            {/* Top Field & Weather Selector Bar */}
+            {/* Verified Contingency Snapshot Notice if external NASA POWER failed */}
+            {isContingencySnapshot && (
+              <div
+                role="status"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-[#fde68a] bg-[#fffbeb] px-4 py-3 text-xs text-[#78350f] sm:text-sm"
+              >
+                <div className="flex items-start gap-2">
+                  <AlertTriangle className="mt-0.5 h-4 w-4 shrink-0 text-[#b45309]" />
+                  <span>
+                    <strong>{tr(language, 'Modo Contingencia:', 'Contingency Mode:')}</strong>{' '}
+                    {tr(
+                      language,
+                      `El endpoint en vivo de NASA POWER no respondió temporalmente; se muestra una captura histórica verificada guardada${formattedSnapshotDate ? ` (${formattedSnapshotDate})` : ''}.`,
+                      `Live NASA POWER endpoint timed out; displaying a verified historical capture saved${formattedSnapshotDate ? ` (${formattedSnapshotDate})` : ''}.`,
+                    )}
+                  </span>
+                </div>
+                <button
+                  type="button"
+                  onClick={() =>
+                    void runAnalysis(focusedParcelId, rainDeltaPct, tempDeltaC, language, true)
+                  }
+                  className="inline-flex items-center gap-1 rounded-md border border-[#fde68a] bg-white px-2.5 py-1 text-xs font-semibold text-[#92400e] hover:bg-[#fef3c7] cursor-pointer"
+                >
+                  <RefreshCw className="h-3.5 w-3.5" />
+                  <span>{tr(language, 'Reintentar NASA en vivo', 'Retry live NASA')}</span>
+                </button>
+              </div>
+            )}
+
+            {/* Top Field Selector + Side-by-Side Scenario Stress Comparator */}
             <ParcelPanel
               language={language}
               profileName={profile.name}
@@ -521,6 +675,8 @@ export default function App() {
               parcelStatus={parcelStatus}
               rainDeltaPct={rainDeltaPct}
               tempDeltaC={tempDeltaC}
+              baselineData={baselineData}
+              activeData={lastData}
               forceOpenNewForm={newFormTrigger}
               onSelectCoords={handleSelectCoords}
               onFocusParcel={handleFocusParcel}
@@ -530,14 +686,28 @@ export default function App() {
               onRunAnalysis={() =>
                 void runAnalysis(focusedParcelId, rainDeltaPct, tempDeltaC, language, true)
               }
-              onChangeRain={setRainDeltaPct}
-              onChangeTemp={setTempDeltaC}
+              onChangeScenario={handleChangeScenario}
             />
 
-            {/* Main Above-the-Fold Grid: (Map + Vitals) + (Tabs below) | Sticky WhatsApp Simulator */}
+            {/* Main Grid: Decision Center FIRST + Map | Accessible Voice Simulator */}
             <div className="grid grid-cols-1 gap-5 lg:grid-cols-[minmax(0,1fr)_364px] lg:items-start">
               <section id="workspaceCenter" className="min-w-0 space-y-4">
-                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.15fr_1fr] xl:items-stretch">
+                <div className="grid grid-cols-1 gap-4 xl:grid-cols-[1.08fr_1fr] xl:items-stretch">
+                  <DiagnosisSummaryCard
+                    language={language}
+                    viewMode={viewMode}
+                    loading={analysisLoading}
+                    error={analysisError}
+                    diagnosis={lastData?.diagnosis ?? null}
+                    baselineDiagnosis={baselineData?.diagnosis ?? null}
+                    focusedParcel={focusedParcel}
+                    strategies={lastData?.strategies ?? []}
+                    baselineStrategies={baselineData?.strategies ?? []}
+                    rainDeltaPct={rainDeltaPct}
+                    tempDeltaC={tempDeltaC}
+                    onChangeScenario={handleChangeScenario}
+                  />
+
                   <ParcelMap
                     lat={selectedLat}
                     lon={selectedLon}
@@ -550,21 +720,16 @@ export default function App() {
                     onSelectParcel={handleFocusParcel}
                     onStartNewParcelAtCoords={() => setNewFormTrigger((n) => n + 1)}
                   />
-
-                  <DiagnosisSummaryCard
-                    language={language}
-                    loading={analysisLoading}
-                    error={analysisError}
-                    diagnosis={lastData?.diagnosis ?? null}
-                    focusedParcel={focusedParcel}
-                    strategies={lastData?.strategies ?? []}
-                  />
                 </div>
 
                 <DiagnosisExplorer
                   language={language}
+                  viewMode={viewMode}
                   diagnosis={lastData?.diagnosis ?? null}
                   strategies={lastData?.strategies ?? []}
+                  baselineStrategies={baselineData?.strategies ?? []}
+                  rainDeltaPct={rainDeltaPct}
+                  tempDeltaC={tempDeltaC}
                   reminder={lastData?.human_judgment_reminder}
                 />
               </section>
@@ -573,26 +738,26 @@ export default function App() {
                 <div className="rounded-xl border border-[#e3e6e1] bg-white px-3.5 py-2.5">
                   <div className="flex items-center gap-2">
                     <Smartphone className="h-4 w-4 shrink-0 text-[#1b4332]" />
-                    <strong className="text-xs font-bold text-[#111813]">
+                    <strong className="text-xs font-bold text-[#111813] sm:text-sm">
                       {tr(
                         language,
-                        'Simulador WhatsApp · Así le llega al productor',
-                        'WhatsApp Simulator · Farmer mobile view',
+                        'Simulador WhatsApp · Canal de accesibilidad Kusi Kusi',
+                        'WhatsApp Simulator · Kusi Kusi accessibility view',
                       )}
                     </strong>
                   </div>
-                  <p className="mt-0.5 text-[11px] text-[#475569]">
+                  <p className="mt-1 text-xs text-[#475569]">
                     {tr(
                       language,
-                      'Toca Play para oír la nota de voz o haz una pregunta abajo.',
-                      'Tap Play to hear the voice report or ask a question below.',
+                      'Simulación local en navegador (Web Speech API) alimentada por los datos NASA calculados para esta parcela.',
+                      'Local browser simulation (Web Speech API) driven by the NASA analysis computed for this field.',
                     )}
                   </p>
                 </div>
 
                 <KusiSimulator
                   language={language}
-                  viewMode="farmer"
+                  viewMode={viewMode}
                   diagnosis={lastData?.diagnosis ?? null}
                   loading={analysisLoading}
                   strategies={lastData?.strategies ?? []}
